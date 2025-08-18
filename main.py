@@ -1,6 +1,7 @@
 from tkinter import filedialog
 import subprocess
 import os
+import shutil
 from player import play_video
 
 # 选择视频文件
@@ -23,7 +24,7 @@ def select_video_file():
 # 音频播放询问
 def ask_audio_play():
     while True:
-        choice = input("是否播放音频(回车默认播放，输入n不播放): ").strip().lower()
+        choice = input("是否播放音频(回车默认播放，输入n不播放): ")。strip()。lower()
         if choice == "" or choice == "y":
             return True
         elif choice == "n":
@@ -34,7 +35,7 @@ def ask_audio_play():
 # 显示模式询问
 def ask_color_mode():
     while True:
-        choice = input("是否使用全彩播放(回车默认灰度，输入y全彩): ").strip()
+        choice = input("是否使用全彩播放(回车默认灰度，输入y全彩): ")。strip()
         if choice == "" or choice == "n":
             return False
         elif choice == "y":
@@ -45,16 +46,18 @@ def ask_color_mode():
 # 音频播放
 def play_audio(video_path):
     try:
-        ffplay_path = os.path.join(os.path.dirname(__file__), "ffmpeg", "bin", "ffplay.exe")
+        ffplay_path = shutil.which("ffplay")
+        if ffplay_path is 无:
+            ffplay_path = os.path.join(os.path.dirname(__file__), "ffmpeg", "bin", "ffplay.exe")
         
-        if not os.path.exists(ffplay_path):
+        if not os.path.exists(ffplay_path) and shutil.which("ffplay") is None:
             print("警告: 找不到ffplay.exe，将无音频播放")
             return None
             
         process = subprocess.Popen([
             ffplay_path, 
             "-nodisp",
-            "-autoexit",
+            "-autoexit"，
             "-vn",
             video_path
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
