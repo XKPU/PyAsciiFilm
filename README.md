@@ -1,0 +1,3 @@
+# PyAsciiFilm
+这是一个用于将视频转换为ASCII并在控制台直接播放的Python程序
+需要的第三方依赖库：numpy、pillow、opencv-python及ffmpeg提供的ffplay.exe
