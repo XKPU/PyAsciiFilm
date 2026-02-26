@@ -1,16 +1,16 @@
 import numpy as np
 
-# 简洁9字符集
-ASCII_CHARS_STANDARD = " .:-=+*#%@"
+# 10字符集
+ASCII_CHARS_10 = " .:-=+*#%@"
 
 # 16字符集
-ASCII_CHARS_16 = ".'`^\":;Il!i><~+-_?][}{)(|\\/tfjrxnuvczXYUJCLQ0OZwmpqdjbkhao*#MW&8%B@$"
+ASCII_CHARS_16 = " .\"!~])txzOp*8$"
 
 # 32字符集
-ASCII_CHARS_32 = ".'`^\":;Il!i><~+-_?][}{)(|\\/tfjrxnuvczXYUJCLQ0OZwmpqdjbkhao*#MW&8%B@$"
+ASCII_CHARS_32 = " .`\";!>~?[)|/frncXUCQOqjka*W8B$"
 
 # 70字符集
-ASCII_CHARS_70 = ".'`^\":;Il!i><~+-_?][}{)(|\\/tfjrxnuvczXYUJCLQ0OZwmpqdjbkhao*#MW&8%B@$"
+ASCII_CHARS_70 = " .'`^\":;Il!i><~+-?][}{)(|\\/tfjrxnuvczXYUJCLQ0OZwmpqdjbkhao*#MW&8%B@$"
 
 # 数字字符集
 ASCII_CHARS_NUMERIC = " 0123456789"
@@ -21,11 +21,11 @@ ASCII_CHARS_BLOCK = " ░▒▓█"
 '''
 选择使用的字符集（修改ASCII_CHARS变量）
 可选值：
-默认：ASCII_CHARS_STANDARD
+默认：ASCII_CHARS_10
 多样：ASCII_CHARS_16, ASCII_CHARS_32, ASCII_CHARS_70
 特殊：ASCII_CHARS_NUMERIC, ASCII_CHARS_BLOCK
 '''
-ASCII_CHARS = ASCII_CHARS_STANDARD
+ASCII_CHARS = ASCII_CHARS_10
 
 
 # 预生成ANSI转义码常量
