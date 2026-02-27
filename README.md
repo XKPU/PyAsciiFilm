@@ -9,3 +9,6 @@
 *  pillow
 *  opencv-python
 *  setuptools
+
+**第三方程序：**
+*  ffplay.exe
