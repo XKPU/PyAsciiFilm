@@ -4,11 +4,12 @@
 
 仅支持Win-x64
 
-**Python 非原生依赖库：**
-*  numpy
-*  pillow
-*  opencv-python
-*  setuptools
+## Python 非原生依赖库：
+>numpy、pillow、opencv-python、setuptools
 
-**第三方程序：**
-*  ffplay.exe
+## 第三方程序：
+**windows**
+>ffplay.exe
+
+**linux**
+>ffplay
