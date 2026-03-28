@@ -1,0 +1,10 @@
+{
+  "CharSets": {
+    "ASCII_CHARS_10": " .:-=+*#%@",
+    "ASCII_CHARS_16": " .\"!~])txzOp*8$",
+    "ASCII_CHARS_32": " .`\";!>~?[)|/frncXUCQOqjka*W8B$",
+    "ASCII_CHARS_70": " .'`^\":;Il!i><~+-?][}{)(|\\/tfjrxnuvczXYUJCLQ0OZwmpqdjbkhao*#MW&8%B@$",
+    "ASCII_CHARS_NUMERIC": " 0123456789"
+  },
+  "Charset": "ASCII_CHARS_10"
+}
