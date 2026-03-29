@@ -3,7 +3,7 @@
 一个用 Python 编写的程序，可将视频转换为 ASCII 字符画，并直接在终端中播放。
 
 ## Python 非原生依赖库：
->numpy、pillow、opencv-python、setuptools
+>numpy、pillow、opencv
 
 ## 第三方程序：
 **windows**
@@ -11,3 +11,6 @@
 
 **linux**
 >ffplay
+
+## 构建依赖：
+>Nuitka
