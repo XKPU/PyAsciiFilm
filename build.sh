@@ -1,7 +1,5 @@
 #!/bin/bash
 
-# Linux 打包脚本 for PyAsciiFilm
-
 ./.venv-linux/bin/python -m nuitka \
     --standalone \
     --enable-plugin=tk-inter \
