@@ -7,8 +7,4 @@
     --output-dir=build\Win_64 ^
     --python-flag=-O ^
     --lto=yes ^
-    --windows-company-name=K_PU ^
-    --windows-product-name=PyAsciiFilm ^
-    --windows-file-version=2.1 ^
-    --windows-product-version=2.1 ^
     .\src\main.py
