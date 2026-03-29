@@ -1,0 +1,6 @@
+numpy == 1.24.4
+opencv-python == 4.13.0.92
+pillow == 10.4.0
+setuptools == 49.2.1
+
+Nuitka == 4.0.7
