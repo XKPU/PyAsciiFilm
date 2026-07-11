@@ -446,8 +446,6 @@ def _source_has_audio(video_path, log):
 
 def _mux_audio(output_video_path, source_video_path, fmt, log):
     # 把原视频的音频轨并入无声导出视频
-    if fmt in ("gif",):
-        return
     if not os.path.isfile(output_video_path):
         return
     if not _source_has_audio(source_video_path, log):
