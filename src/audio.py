@@ -2,7 +2,7 @@
 import threading
 import time
 
-from utils import _default_log, _forward_stderr, _ffmpeg_exe
+from utils import _default_log, _forward_stderr, _ffmpeg_exe, _CREATE_NO_WINDOW, _log, _log_error
 
 # 统一解码为固定采样率/声道
 _SAMPLE_RATE = 44100
@@ -14,12 +14,15 @@ def start_audio(video_path, log=None):
     # 后台流式播放音轨
     ffmpeg = _ffmpeg_exe()
     if not ffmpeg:
+        _log("音频初始化跳过：未找到 ffmpeg")
         return None
-    _log = log or _default_log
+    _logfn = log or _default_log
     try:
         import sounddevice as sd
         import numpy as np
+        _log(f"音频初始化: {video_path} | 采样率 {_SAMPLE_RATE} 声道 {_CHANNELS}")
     except ImportError:
+        _log("音频初始化跳过：未安装 sounddevice/numpy")
         return None
 
     stop_event = threading.Event()
@@ -40,11 +43,10 @@ def start_audio(video_path, log=None):
             "-ar", str(_SAMPLE_RATE),
             "-",
         ]
-        kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE}
-        if hasattr(subprocess, "CREATE_NO_WINDOW"):
-            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE,
+                  "creationflags": _CREATE_NO_WINDOW}
         proc = subprocess.Popen(cmd, **kwargs)
-        _forward_stderr(proc, _log)
+        _forward_stderr(proc, _logfn)
 
         def callback(outdata, frames, time_info, status):
             nbytes = frames * _CHANNELS * 4
@@ -76,12 +78,14 @@ def start_audio(video_path, log=None):
                 latency[0] = float(stream.latency)
             except Exception:
                 latency[0] = 0.0
+            _log(f"音频播放开始: 延迟 {latency[0]:.3f}s")
             while stream.active and not stop_event.is_set():
                 time.sleep(0.05)
             stream.stop()
             stream.close()
-        except Exception:
-            pass
+            _log("音频播放结束")
+        except Exception as e:
+            _log_error(f"音频播放异常: {e}")
         finally:
             try:
                 proc.stdout.close()

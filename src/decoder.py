@@ -7,8 +7,8 @@ import cv2
 import numpy as np
 from analyze import clean_fps
 from utils import (
-    _default_log, _forward_stderr, _ffmpeg_exe, _probe_hw_accel,
-    _CREATE_NO_WINDOW,
+    _forward_stderr, _ffmpeg_exe, _probe_hw_accel,
+    _CREATE_NO_WINDOW, _log,
 )
 
 
@@ -18,7 +18,7 @@ class FrameReader:
     def __init__(self, video_path, log=None, force_ffmpeg=False, force_size=None,
                  metadata=None, hwaccel=True, decode_args=None):
         self.path = video_path
-        self._log = log or _default_log
+        self._log = log or _log
         self._force = bool(force_ffmpeg)
         self._force_size = force_size
         self._hwaccel = hwaccel

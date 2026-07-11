@@ -6,8 +6,15 @@ import sys
 import threading
 
 
-# Windows 下隐藏子进程（ffmpeg 等）弹出的控制台窗口；其它平台为 0
-_CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+# Windows 下隐藏子进程（ffmpeg 等）弹出的控制台窗口
+_CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW
+
+
+def _app_dir():
+    # 程序所在目录：打包后用 exe 同目录；源码运行用启动时的当前工作目录
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.getcwd()
 
 
 def _spawn_kwargs(**extra):
@@ -18,113 +25,67 @@ def _spawn_kwargs(**extra):
 
 
 # ---------------------------------------------------------------------------
-# 持久日志文件（仅 debug 模式启用）
+# 持久日志文件（位于程序所在目录，与 setting.json 同目录，启动即清空）
 # ---------------------------------------------------------------------------
-_DEBUG = False
-_LOG_PATH = None
+_LOG_PATH = os.path.join(_app_dir(), "pyasciifilm.log")
+_LOG_LOCK = threading.Lock()
 _LOGGER = None
 
 
-def _set_debug(enabled=True):
-    global _DEBUG
-    _DEBUG = enabled
-
-
-def _log_path():
-    global _LOG_PATH
-    if not _DEBUG:
-        return None
-    if _LOG_PATH is not None:
-        return _LOG_PATH
-    try:
-        _LOG_PATH = os.path.join(os.getcwd(), "pyasciifilm.log")
-        with open(_LOG_PATH, "a", encoding="utf-8"):
-            pass
-    except Exception:
-        try:
-            import tempfile
-            _LOG_PATH = os.path.join(tempfile.gettempdir(), "pyasciifilm.log")
-        except Exception:
-            _LOG_PATH = False
-    return _LOG_PATH or None
-
-
-def _get_logger():
-    # 惰性配置一个只写文件的 logger
+def _init_logger():
+    # 惰性配置全局 logger（仅写文件，线程安全）
     global _LOGGER
     if _LOGGER is not None:
         return _LOGGER
     logger = logging.getLogger("pyasciifilm")
     logger.setLevel(logging.DEBUG)
     logger.propagate = False
-    p = _log_path()
-    if p:
-        try:
-            fh = logging.FileHandler(p, encoding="utf-8", delay=False)
-            fh.setLevel(logging.DEBUG)
-            fh.setFormatter(logging.Formatter(
-                "%(asctime)s [%(levelname)s] %(message)s",
-                "%Y-%m-%d %H:%M:%S",
-            ))
-            logger.addHandler(fh)
-        except Exception:
-            pass
+    try:
+        fh = logging.FileHandler(_LOG_PATH, encoding="utf-8", delay=False)
+        fh.setLevel(logging.DEBUG)
+        fh.setFormatter(logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(message)s",
+            "%Y-%m-%d %H:%M:%S",
+        ))
+        logger.addHandler(fh)
+    except Exception:
+        pass
     _LOGGER = logger
     return logger
 
 
-def _write_log_file(msg, level=logging.INFO):
-    # 把一行日志写入持久日志文件（仅 debug 模式）
-    if not _DEBUG:
-        return
-    if not isinstance(msg, str):
-        msg = str(msg)
-    try:
-        _get_logger().log(level, msg)
-    except Exception:
-        pass
-
-
 def _clear_log():
-    # 程序启动时清空日志文件（仅 debug 模式）
-    if not _DEBUG:
-        return
-    global _LOGGER
-    if _LOGGER is not None:
-        for h in list(_LOGGER.handlers):
-            try:
-                h.close()
-            except Exception:
-                pass
-            try:
-                _LOGGER.removeHandler(h)
-            except Exception:
-                pass
-        _LOGGER = None
-    p = _log_path()
-    if not p:
-        return
+    # 程序启动时清空日志文件
     try:
-        with open(p, "w", encoding="utf-8") as f:
+        with open(_LOG_PATH, "w", encoding="utf-8") as f:
             f.write("")
     except Exception:
         pass
 
 
-def _log_level(msg):
-    # 根据消息前缀推断日志级别
-    s = (msg or "").lstrip()
-    if s.startswith(("错误", "失败", "异常", "ERROR", "Error")):
-        return logging.ERROR
-    if s.startswith(("警告", "warn", "Warn", "WARNING")):
-        return logging.WARNING
-    return logging.INFO
+def _log(msg, level=logging.INFO):
+    # 写入一行日志到持久文件（全模块共用）
+    if not isinstance(msg, str):
+        msg = str(msg)
+    try:
+        with _LOG_LOCK:
+            _init_logger().log(level, msg)
+    except Exception:
+        pass
+
+
+def _log_error(msg):
+    # 便捷：写入错误级日志
+    _log(msg, level=logging.ERROR)
+
+
+def _log_warn(msg):
+    # 便捷：写入警告级日志
+    _log(msg, level=logging.WARNING)
 
 
 def _default_log(msg):
-    # 默认日志：debug 模式写入持久日志文件，并转发到真实终端 stderr
-    if _DEBUG:
-        _write_log_file(msg, level=_log_level(msg))
+    # 默认日志：转发到真实终端 stderr
     try:
         print(msg, file=sys.stderr)
     except Exception:

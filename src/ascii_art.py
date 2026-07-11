@@ -1,12 +1,11 @@
 # ASCII 字符画核心
 import os
-import sys
 import json
 import numpy as np
 
-# onefile 模式下 __file__ 指向临时解压目录，用 exe 同目录更可靠
-_APP_DIR = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(__file__)
-CONFIG_FILE = os.path.join(_APP_DIR, "setting.json")
+# onefile 模式下用 exe 同目录；否则用代码所在目录（与日志同目录）
+from utils import _app_dir
+CONFIG_FILE = os.path.join(_app_dir(), "setting.json")
 
 _DEFAULT_CONFIG = {
     "CharSets": {

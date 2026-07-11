@@ -1,9 +1,7 @@
 # 导出为视频（高性能 + 多格式）
 import os
 import math
-import platform
 import subprocess
-import logging
 import tempfile
 import threading
 import time
@@ -17,8 +15,8 @@ from ascii_art import ASCII_CHARS, make_lookup
 from analyze import clean_fps
 from decoder import FrameReader
 from utils import (
-    _write_log_file, _forward_stderr, _ffmpeg_exe,
-    _probe_hw_accel, _log_level,
+    _forward_stderr, _ffmpeg_exe,
+    _probe_hw_accel, _CREATE_NO_WINDOW, _log, _log_error, _log_warn,
 )
 
 # 灰度->字符查找表构建一次复用
@@ -30,8 +28,8 @@ _FMT_FFMPEG_CODECS = {
     "mov":  [("libx264", ["-pix_fmt", "yuv420p"])],
     "mkv":  [("libx264", ["-pix_fmt", "yuv420p"])],
     "avi":  [("libx264", ["-pix_fmt", "yuv420p"]), ("mpeg4", [])],
-    "webm": [("libvpx", ["-b:v", "0", "-crf", "18"]),
-             ("libvpx-vp9", ["-b:v", "0", "-crf", "30"])],
+    "webm": [("libvpx", ["-pix_fmt", "yuv420p", "-b:v", "0", "-crf", "18"]),
+             ("libvpx-vp9", ["-pix_fmt", "yuv420p", "-b:v", "0", "-crf", "30"])],
 }
 
 # 单帧字节上限
@@ -154,9 +152,8 @@ def _make_ffmpeg_writer(output_path, fps, w, h, fmt, log):
         if fmt == "mp4":
             cmd += ["-movflags", "+faststart"]
         cmd += [output_path]
-        kwargs = {"stdin": subprocess.PIPE, "stderr": subprocess.PIPE}
-        if hasattr(subprocess, "CREATE_NO_WINDOW"):
-            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+        kwargs = {"stdin": subprocess.PIPE, "stderr": subprocess.PIPE,
+                  "creationflags": _CREATE_NO_WINDOW}
         try:
             proc = subprocess.Popen(cmd, **kwargs)
         except Exception as e:
@@ -172,54 +169,24 @@ def _make_ffmpeg_writer(output_path, fps, w, h, fmt, log):
 
 def _make_log(on_log):
     # 构造传给 FrameReader 的 log 回调
-    def _log(msg):
-        _write_log_file(msg, level=_log_level(msg))
+    def _cb(msg):
+        _log(msg)
         if on_log is not None:
             try:
                 on_log(msg)
             except Exception:
                 pass
-    return _log
+    return _cb
 
 
 # --------------------------- 字体 ---------------------------
 def _load_mono_font(charset=None):
-    # 跨平台加载一个等宽字体
-    sys_name = platform.system()
-    if sys_name == "Windows":
-        candidates = [
-            "C:/Windows/Fonts/consola.ttf",
-            "C:/Windows/Fonts/cour.ttf",
-            "C:/Windows/Fonts/lucon.ttf",
-        ]
-    elif sys_name == "Darwin":
-        candidates = [
-            "/System/Library/Fonts/Menlo.ttc",
-            "/Library/Fonts/DejaVuSansMono.ttf",
-            "/System/Library/Fonts/Monaco.ttf",
-        ]
-    else:
-        candidates = [
-            "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf",
-        ]
-        try:
-            import shutil
-            if shutil.which("fc-match"):
-                out = subprocess.check_output(
-                    ["fc-match", "monospace:spacing=mono"], text=True
-                ).split(":")[0].strip()
-                if out:
-                    if os.path.isabs(out) and os.path.exists(out):
-                        candidates.insert(0, out)
-                    else:
-                        for d in ("/usr/share/fonts", "/usr/local/share/fonts"):
-                            p = os.path.join(d, out)
-                            if os.path.exists(p):
-                                candidates.insert(0, p)
-                                break
-        except Exception:
-            pass
+    # 加载一个 Windows 等宽字体
+    candidates = [
+        "C:/Windows/Fonts/consola.ttf",
+        "C:/Windows/Fonts/cour.ttf",
+        "C:/Windows/Fonts/lucon.ttf",
+    ]
 
     sample = list(" .:-=+*#%@MWAi01abcdefghijklmnopqrstuvwxyz[](){}/\\|")
     if charset:
@@ -343,6 +310,7 @@ def export_video(video_path, output_path, target_w, target_h, target_fps,
         decode_args = hwaccel.get("decode_args")
         hwaccel = bool(decode_args)
     log = _make_log(on_log)
+    _log(f"开始导出: 输入={video_path} -> 输出={output_path} (格式 {fmt}, 彩色={use_color})")
     log(f"开始导出: 输入={video_path} -> 输出={output_path} (格式 {fmt}, 彩色={use_color})")
     try:
         cap = FrameReader(video_path, log=log, force_ffmpeg=True, hwaccel=hwaccel,
@@ -418,10 +386,7 @@ def _finish_export(ok, msg, on_done, elapsed=None):
         h, m = divmod(m, 60)
         ts = f"{h:d}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
         msg = f"{msg}\n  耗时 {ts} ({elapsed:.1f}s)"
-    _write_log_file(
-        f"导出结束: {'成功' if ok else '失败'} | {msg.replace(chr(10), ' ')}",
-        level=logging.INFO if ok else logging.ERROR,
-    )
+    _log(f"导出结束: {'成功' if ok else '失败'} | {msg.replace(chr(10), ' ')}")
     if on_done:
         on_done(ok, msg)
     return ok, msg
@@ -436,7 +401,7 @@ def _source_has_audio(video_path, log):
         res = subprocess.run(
             [ff, "-hide_banner", "-i", video_path],
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True,
-            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            creationflags=_CREATE_NO_WINDOW,
         )
         txt = res.stderr or ""
     except Exception:
@@ -467,7 +432,7 @@ def _mux_audio(output_video_path, source_video_path, fmt, log):
     cmd = common + ["-c:a", "copy", tmp]
     try:
         r = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                           text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                           text=True, creationflags=_CREATE_NO_WINDOW)
     except Exception as e:
         r = None
         log(f"警告：复制音频异常（保留无声视频）: {e}")
@@ -479,7 +444,7 @@ def _mux_audio(output_video_path, source_video_path, fmt, log):
             cmd2 = common + ["-c:a", acodec, tmp]
             try:
                 r2 = subprocess.run(cmd2, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                                    text=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                                    text=True, creationflags=_CREATE_NO_WINDOW)
             except Exception as e:
                 r2 = None
                 log(f"警告：重编码音频异常（保留无声视频）: {e}")
@@ -547,3 +512,4 @@ def _export_single(video_path, writer, output_path, target_w, target_h, target_f
            f"  帧数 {out_count} / 分辨率 {canvas_w}x{canvas_h} / 帧率 {target_fps:.2f}fps")
     log(msg.replace("\n", " | "))
     return True, msg
+

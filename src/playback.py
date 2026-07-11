@@ -9,10 +9,9 @@ from ascii_art import (
     generate_colored_frame,
 )
 from audio import start_audio
-import logging
 
 from decoder import FrameReader
-from utils import _write_log_file
+from utils import _log, _log_error
 
 
 # ---------------------------------------------------------------------------
@@ -104,6 +103,7 @@ def _create_progress_bar(current, total, width=50):
 def play_video(video_path, use_color=False, with_audio=True):
     # 在原始终端用 ANSI 直接播放视频
     _enable_windows_ansi()
+    _log(f"播放初始化: {video_path} | 彩色={use_color} 音频={with_audio}")
     out = sys.stdout
 
     # 播放时屏幕被视频占用，ffmpeg 日志先缓冲
@@ -114,12 +114,12 @@ def play_video(video_path, use_color=False, with_audio=True):
             _playback_logs.append(msg)
         except Exception:
             pass
-        _write_log_file(msg, level=logging.INFO)
+        _log(msg)
 
     try:
         cap = FrameReader(video_path, log=_buf_log)
     except Exception as e:
-        _write_log_file(f"错误: 无法打开视频文件（{e}）", level=logging.ERROR)
+        _log_error(f"无法打开视频文件（{e}）")
         print(f"错误: 无法打开视频文件（{e}）")
         return False
 

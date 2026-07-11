@@ -10,7 +10,7 @@ from textual.widgets import (
 from textual.containers import Vertical, Horizontal, ScrollableContainer
 from textual import events
 
-from utils import _log_path, _list_verified_decode_backends
+from utils import _list_verified_decode_backends, _log, _log_warn
 from ascii_art import reload_charset, ASCII_CHARS
 
 
@@ -86,17 +86,12 @@ class InputOnlyScreen(App):
 
 def _input_select_video():
     # 回退方案：在 Textual 内嵌输入框中让用户手动输入视频路径
-    from utils import _write_log_file
-    import logging
     try:
         return InputOnlyScreen(
             "选择视频",
             "输入视频文件路径，回车或点击确定：",
         ).run()
-    except Exception as e:
-        _write_log_file(f"终端输入框异常: {e}", level=logging.ERROR)
-        import traceback as _tb
-        _write_log_file(_tb.format_exc(), level=logging.ERROR)
+    except Exception:
         return None
 
 
@@ -120,10 +115,8 @@ def _system_browse_output(initial, fmt):
         )
         root.destroy()
         return path or None
-    except Exception as e:
-        from utils import _write_log_file
-        import logging
-        _write_log_file(f"系统保存对话框不可用，回退终端输入框: {e}", level=logging.WARNING)
+    except Exception:
+        _log_warn("系统保存对话框不可用，回退终端输入")
         return None
 
 
@@ -167,17 +160,23 @@ class MenuApp(App):
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         # 处理菜单项选择
         if event.item.id == "export":
+            _log("菜单：选择导出为视频")
             self.push_screen(ExportSettingsScreen(self.video_path))
         elif event.item.id == "play_gray_audio":
+            _log("菜单：播放灰度视频（带音频）")
             self.app.exit(result=("play", False))
         elif event.item.id == "play_color_audio":
+            _log("菜单：播放全彩色视频（带音频）")
             self.app.exit(result=("play", True))
         elif event.item.id == "reselect":
+            _log("菜单：重新选择视频")
             self.app.exit(result=("reselect",))
         elif event.item.id == "reload_config":
             chars = reload_charset()
+            _log("菜单：刷新配置文件")
             self.notify(f"配置已刷新，字符集已重新加载（共 {len(chars)} 个字符）")
         else:
+            _log("菜单：退出")
             self.app.exit(result="quit")
 
 
