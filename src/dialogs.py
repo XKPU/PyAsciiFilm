@@ -1,9 +1,7 @@
-# 轻量文件选择（仅依赖 tkinter，避免加载 textual/cv2 等重型模块）
 import os
 
 
 def _system_select_video():
-    # 通过 tkinter 弹出系统原生文件打开对话框
     try:
         import tkinter as tk
         from tkinter import filedialog
@@ -24,7 +22,6 @@ def _system_select_video():
 
 
 def select_video_path():
-    # 弹出文件选择对话框让用户选取视频文件（优先系统对话框，失败再回退 TUI）
     path = _system_select_video()
     if path:
         return path

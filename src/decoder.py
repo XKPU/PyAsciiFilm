@@ -62,8 +62,6 @@ class FrameReader:
                     self._cv2 = cap
                     self.width, self.height = w, h
                     self.fps, self.frame_count = fps, n
-                    # cv2 的帧数在部分封装/编码下不可靠，用 ffmpeg 探测的真实
-                    # 时长覆盖，保证进度条与实际播放位置一致
                     self.duration = self._probe_duration_ffmpeg(_ffmpeg_exe()) or (n / fps if fps else 0.0)
                     return
                 cap.release()
