@@ -10,46 +10,24 @@ from textual.widgets import (
 from textual.containers import Vertical, Horizontal, ScrollableContainer
 from textual import events
 
-from exporter import export_video, _load_mono_font, _MAX_FRAME_BYTES
 from utils import _log_path, _list_verified_decode_backends
 from ascii_art import reload_charset, ASCII_CHARS
 
 
-# ---------------------------------------------------------------------------
-# 视频文件选择
-# ---------------------------------------------------------------------------
-
-def select_video_path():
-    # 弹出文件选择对话框让用户选取视频文件
-    path = _system_select_video()
-    if path:
-        return path
-    return _input_select_video()
+_EXPORTER = None
 
 
-def _system_select_video():
-    # 通过 tkinter 弹出系统原生文件打开对话框
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-        root = tk.Tk()
-        root.withdraw()
-        path = filedialog.askopenfilename(
-            title="选择视频文件",
-            filetypes=[("视频文件", "*.mp4 *.avi *.mkv *.mov *.wmv *.flv *.webm *.m4v"),
-                       ("所有文件", "*.*")],
-        )
-        root.destroy()
-        return path or None
-    except Exception as e:
-        from utils import _write_log_file
-        import logging
-        _write_log_file(f"回退终端: {e}", level=logging.WARNING)
-        return None
+def _exporter():
+    # 惰性加载导出模块（避免启动即加载 cv2 / imageio_ffmpeg 等重型依赖）
+    global _EXPORTER
+    if _EXPORTER is None:
+        from exporter import export_video, _load_mono_font, _MAX_FRAME_BYTES
+        _EXPORTER = (export_video, _load_mono_font, _MAX_FRAME_BYTES)
+    return _EXPORTER
 
 
 # ---------------------------------------------------------------------------
-# Textual 内嵌路径输入框
+# Textual 内嵌路径输入框（文件选择的回退方案，需要 textual）
 # ---------------------------------------------------------------------------
 
 class InputOnlyScreen(App):
@@ -281,7 +259,7 @@ class ExportSettingsScreen(Screen):
         self.video_path = video_path
         self.src_w, self.src_h, self.src_fps = _probe_video(video_path)
         try:
-            _, self.cell_w, self.cell_h = _load_mono_font(ASCII_CHARS)
+            _, self.cell_w, self.cell_h = _exporter()[1](ASCII_CHARS)
         except Exception:
             self.cell_w, self.cell_h = 10, 20
         self.rec_w, self.rec_h = self._recommended_char_size()
@@ -318,6 +296,7 @@ class ExportSettingsScreen(Screen):
         char_w = min(self._MAX_REC_CHAR_W, max(1, round(self.src_w / self.cell_w)))
         char_h = self._char_h_for_w(char_w)
         frame_bytes, _, _ = self._canvas_bytes(char_w, char_h)
+        _MAX_FRAME_BYTES = _exporter()[2]
         if frame_bytes > _MAX_FRAME_BYTES:
             scale = (_MAX_FRAME_BYTES / frame_bytes) ** 0.5
             char_w = max(1, int(char_w * scale))
@@ -331,7 +310,7 @@ class ExportSettingsScreen(Screen):
                 f"字符（对应画布 {rcw}x{rch}px ≈ 原视频比例）")
         if char_w and char_h and char_w > 0 and char_h > 0:
             fb, cw, ch = self._canvas_bytes(char_w, char_h)
-            over = " 单帧过大" if fb > _MAX_FRAME_BYTES else ""
+            over = " 单帧过大" if fb > _exporter()[2] else ""
             base += f"\n当前 {char_w}x{char_h} → 画布 {cw}x{ch}px（单帧约 {fb / 1048576:.1f}MB{over}）"
         return base
 
@@ -501,7 +480,7 @@ class ExportSettingsScreen(Screen):
             self.query_one("#err", Static).update("宽度/高度/帧率必须大于 0")
             return
         frame_bytes, cw, ch = self._canvas_bytes(w, h)
-        if frame_bytes > _MAX_FRAME_BYTES:
+        if frame_bytes > _exporter()[2]:
             self.query_one("#err", Static).update(
                 f"字符网格过大：{w}x{h} → 画布 {cw}x{ch}px（单帧 {frame_bytes / 1048576:.0f}MB）。"
                 f"减小字符数，推荐 {self.rec_w}x{self.rec_h}")
@@ -633,7 +612,7 @@ class ExportProgressScreen(Screen):
             self.app.call_from_thread(upd)
 
         try:
-            export_video(
+            _exporter()[0](
                 self.video_path, out_base,
                 self.params["w"], self.params["h"], self.params["fps"],
                 use_color=self.params["color"], fmt=self.params["fmt"],

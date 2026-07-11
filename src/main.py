@@ -4,8 +4,7 @@ import sys
 import threading
 
 from utils import _probe_hw_accel, _clear_log, _write_log_file, _log_path, _set_debug
-from ui import select_video_path, MenuApp
-from playback import play_video
+from dialogs import select_video_path
 
 # 命令行参数
 if "--debug" in sys.argv:
@@ -21,6 +20,7 @@ threading.Thread(target=_probe_hw_accel, daemon=True).start()
 
 def do_play(video_path, use_color, with_audio=True):
     # 退出 textual 后在原始终端播放
+    from playback import play_video
     _write_log_file(f"开始播放: {video_path} | 彩色={use_color} 音频={with_audio}")
     try:
         play_video(video_path, use_color=use_color, with_audio=with_audio)
@@ -39,6 +39,8 @@ def main():
         _write_log_file("未选择视频，退出", level=logging.WARNING)
         return
     _write_log_file(f"已选择视频: {video_path}")
+
+    from ui import MenuApp
 
     while True:
         result = MenuApp(video_path).run()

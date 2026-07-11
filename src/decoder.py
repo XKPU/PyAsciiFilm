@@ -32,6 +32,7 @@ class FrameReader:
         self.width = self.height = 0
         self.fps = 0.0
         self.frame_count = 0
+        self.duration = 0.0
         if metadata is not None:
             self.width, self.height, self.fps, self.frame_count = metadata
             if self._force_size is not None:
@@ -61,6 +62,9 @@ class FrameReader:
                     self._cv2 = cap
                     self.width, self.height = w, h
                     self.fps, self.frame_count = fps, n
+                    # cv2 的帧数在部分封装/编码下不可靠，用 ffmpeg 探测的真实
+                    # 时长覆盖，保证进度条与实际播放位置一致
+                    self.duration = self._probe_duration_ffmpeg(_ffmpeg_exe()) or (n / fps if fps else 0.0)
                     return
                 cap.release()
         self._open_ffmpeg()
@@ -72,7 +76,7 @@ class FrameReader:
             raise RuntimeError(
                 "无法初始化 cv2 视频解码器，且未找到随包 ffmpeg，无法解码该视频。"
             )
-        w, h, fps, n = self._probe_with_ffmpeg(ff)
+        w, h, fps, n, dur = self._probe_with_ffmpeg(ff)
         if w <= 0 or h <= 0:
             raise RuntimeError(
                 f"无法初始化视频解码器：无法探测视频分辨率（{self.path}）"
@@ -85,6 +89,7 @@ class FrameReader:
                 scale_w, scale_h = tw, th
         self._scale_w, self._scale_h = scale_w, scale_h
         self.width, self.height, self.fps, self.frame_count = w, h, fps, n
+        self.duration = dur or (n / fps if fps else 0.0)
 
         if self._force:
             if self._decode_args:
@@ -171,13 +176,14 @@ class FrameReader:
             fps = clean_fps(float(mf.group(1)))
 
         n = 0
+        dur = 0.0
         mn = re.search(r"nb_frames\s*=\s*(\d+)", txt)
         if mn:
             n = int(mn.group(1))
-        else:
-            md = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", txt)
-            if md and fps:
-                dur = int(md.group(1)) * 3600 + int(md.group(2)) * 60 + float(md.group(3))
+        md = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", txt)
+        if md:
+            dur = int(md.group(1)) * 3600 + int(md.group(2)) * 60 + float(md.group(3))
+            if not n and fps:
                 n = int(dur * fps)
 
         if w <= 0 or h <= 0:
@@ -189,7 +195,26 @@ class FrameReader:
                 n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or n
             cap.release()
 
-        return w, h, fps, n
+        return w, h, fps, n, dur
+
+    def _probe_duration_ffmpeg(self, ff):
+        # 单独用 ffmpeg 探测真实时长（比 cv2 帧数可靠）
+        if not ff:
+            return 0.0
+        try:
+            res = subprocess.run(
+                [ff, "-hide_banner", "-i", self.path],
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                text=True,
+                creationflags=_CREATE_NO_WINDOW,
+            )
+            txt = res.stderr or ""
+        except Exception:
+            return 0.0
+        md = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", txt)
+        if md:
+            return int(md.group(1)) * 3600 + int(md.group(2)) * 60 + float(md.group(3))
+        return 0.0
 
     def read(self):
         # 读取一帧

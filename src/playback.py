@@ -94,7 +94,7 @@ def _create_progress_bar(current, total, width=50):
     # 进度条
     if total <= 0:
         return "[未知进度]"
-    progress = current / total
+    progress = max(0.0, min(1.0, current / total))
     filled_width = int(width * progress)
     bar = "█" * filled_width + "░" * (width - filled_width)
     percent = progress * 100
@@ -128,6 +128,7 @@ def play_video(video_path, use_color=False, with_audio=True):
     video_width = int(cap.width)
     video_height = int(cap.height)
     total_frames = int(cap.frame_count)
+    total_duration = cap.duration if cap.duration and cap.duration > 0 else (total_frames / fps if fps else 0.0)
 
     audio = start_audio(video_path, log=_buf_log) if with_audio else None
     stop_audio = audio[0] if audio else None
@@ -176,7 +177,11 @@ def play_video(video_path, use_color=False, with_audio=True):
                 f"平均帧率: {idx / max(time.monotonic() - start, 1e-6):.1f} FPS"
                 f" | 原视频帧: {idx}/{total_frames} | {color_mode_text}{performance_text}"
             )
-            progress_bar = _create_progress_bar(idx, total_frames, max(10, ascii_width // 2))
+            elapsed = time.monotonic() - start
+            if total_duration > 0:
+                progress_bar = _create_progress_bar(elapsed, total_duration, max(10, ascii_width // 2))
+            else:
+                progress_bar = _create_progress_bar(idx, total_frames, max(10, ascii_width // 2))
 
             output = f"{ascii_frame}\n\n{progress_info} {progress_bar}"
 
