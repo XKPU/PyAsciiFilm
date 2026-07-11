@@ -1,0 +1,346 @@
+# 共享基础设施
+import logging
+import os
+import subprocess
+import sys
+import threading
+
+
+# Windows 下隐藏子进程（ffmpeg 等）弹出的控制台窗口；其它平台为 0
+_CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+
+def _spawn_kwargs(**extra):
+    # 构造子进程 Popen/run 的通用关键字参数
+    kw = {"creationflags": _CREATE_NO_WINDOW}
+    kw.update(extra)
+    return kw
+
+
+# ---------------------------------------------------------------------------
+# 持久日志文件（仅 debug 模式启用）
+# ---------------------------------------------------------------------------
+_DEBUG = False
+_LOG_PATH = None
+_LOGGER = None
+
+
+def _set_debug(enabled=True):
+    global _DEBUG
+    _DEBUG = enabled
+
+
+def _log_path():
+    global _LOG_PATH
+    if not _DEBUG:
+        return None
+    if _LOG_PATH is not None:
+        return _LOG_PATH
+    try:
+        _LOG_PATH = os.path.join(os.getcwd(), "pyasciifilm.log")
+        with open(_LOG_PATH, "a", encoding="utf-8"):
+            pass
+    except Exception:
+        try:
+            import tempfile
+            _LOG_PATH = os.path.join(tempfile.gettempdir(), "pyasciifilm.log")
+        except Exception:
+            _LOG_PATH = False
+    return _LOG_PATH or None
+
+
+def _get_logger():
+    # 惰性配置一个只写文件的 logger
+    global _LOGGER
+    if _LOGGER is not None:
+        return _LOGGER
+    logger = logging.getLogger("pyasciifilm")
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    p = _log_path()
+    if p:
+        try:
+            fh = logging.FileHandler(p, encoding="utf-8", delay=False)
+            fh.setLevel(logging.DEBUG)
+            fh.setFormatter(logging.Formatter(
+                "%(asctime)s [%(levelname)s] %(message)s",
+                "%Y-%m-%d %H:%M:%S",
+            ))
+            logger.addHandler(fh)
+        except Exception:
+            pass
+    _LOGGER = logger
+    return logger
+
+
+def _write_log_file(msg, level=logging.INFO):
+    # 把一行日志写入持久日志文件（仅 debug 模式）
+    if not _DEBUG:
+        return
+    if not isinstance(msg, str):
+        msg = str(msg)
+    try:
+        _get_logger().log(level, msg)
+    except Exception:
+        pass
+
+
+def _clear_log():
+    # 程序启动时清空日志文件（仅 debug 模式）
+    if not _DEBUG:
+        return
+    global _LOGGER
+    if _LOGGER is not None:
+        for h in list(_LOGGER.handlers):
+            try:
+                h.close()
+            except Exception:
+                pass
+            try:
+                _LOGGER.removeHandler(h)
+            except Exception:
+                pass
+        _LOGGER = None
+    p = _log_path()
+    if not p:
+        return
+    try:
+        with open(p, "w", encoding="utf-8") as f:
+            f.write("")
+    except Exception:
+        pass
+
+
+def _log_level(msg):
+    # 根据消息前缀推断日志级别
+    s = (msg or "").lstrip()
+    if s.startswith(("错误", "失败", "异常", "ERROR", "Error")):
+        return logging.ERROR
+    if s.startswith(("警告", "warn", "Warn", "WARNING")):
+        return logging.WARNING
+    return logging.INFO
+
+
+def _default_log(msg):
+    # 默认日志：debug 模式写入持久日志文件，并转发到真实终端 stderr
+    if _DEBUG:
+        _write_log_file(msg, level=_log_level(msg))
+    try:
+        print(msg, file=sys.stderr)
+    except Exception:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# ffmpeg 路径
+# ---------------------------------------------------------------------------
+_FFMPEG = None
+
+
+def _ffmpeg_exe():
+    # 返回随包 ffmpeg 路径（缓存）；不可用返回 None
+    global _FFMPEG
+    if _FFMPEG is not None:
+        return _FFMPEG
+    try:
+        import imageio_ffmpeg
+        _FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        _FFMPEG = False
+    return _FFMPEG or None
+
+
+# ---------------------------------------------------------------------------
+# 子进程 stderr 转发
+# ---------------------------------------------------------------------------
+def _forward_stderr(proc, log):
+    # 后台线程逐行读取子进程 stderr 并转发给 log(line)
+    if getattr(proc, "stderr", None) is None:
+        return
+
+    def _pump():
+        try:
+            for raw in iter(proc.stderr.readline, b""):
+                if not raw:
+                    break
+                line = raw.decode("utf-8", "replace").rstrip("\r\n")
+                if line:
+                    log(line)
+        except Exception:
+            pass
+        finally:
+            try:
+                proc.stderr.close()
+            except Exception:
+                pass
+
+    threading.Thread(target=_pump, daemon=True).start()
+
+
+# ---------------------------------------------------------------------------
+# 硬件加速探测
+# ---------------------------------------------------------------------------
+_HW_ACCEL = None
+
+
+def _validate_encoder(ff, encoder, extra_args, w=160, h=120):
+    # 用 1 帧 160x120 yuv420p 实际编码验证编码器是否可用
+    cmd = [ff, "-y", "-hide_banner", "-loglevel", "error",
+           "-f", "rawvideo", "-pix_fmt", "yuv420p",
+           "-s", f"{w}x{h}", "-r", "24", "-i", "-",
+           "-frames:v", "1", "-c:v", encoder] + list(extra_args) + ["-f", "null", "-"]
+    try:
+        sz = w * h * 3 // 2
+        p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE,
+                             creationflags=_CREATE_NO_WINDOW)
+        _, stderr = p.communicate(input=b"\x80" * sz, timeout=10)
+        return p.returncode == 0
+    except Exception:
+        return False
+
+
+def _probe_hw_accel():
+    # 探测随包 ffmpeg 可用的硬件加速后端，返回结构化字典（缓存）
+    global _HW_ACCEL
+    if _HW_ACCEL is not None:
+        return _HW_ACCEL
+    ff = _ffmpeg_exe()
+    if not ff:
+        _HW_ACCEL = {"decode": [], "encode_h264": [], "encode_hevc": [],
+                      "any_hw": False}
+        return _HW_ACCEL
+
+    hwaccels = set()
+    listed_encoders = set()
+    try:
+        r = subprocess.run([ff, "-hide_banner", "-hwaccels"],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                           text=True, timeout=5,
+                           creationflags=_CREATE_NO_WINDOW)
+        for line in (r.stdout or "").splitlines():
+            line = line.strip()
+            if line and not line.startswith("-") and not line.startswith("Hardware"):
+                hwaccels.add(line)
+    except Exception:
+        pass
+    try:
+        r = subprocess.run([ff, "-hide_banner", "-encoders"],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                           text=True, timeout=5,
+                           creationflags=_CREATE_NO_WINDOW)
+        for line in (r.stdout or "").splitlines():
+            for name in ("h264_nvenc", "hevc_nvenc",
+                         "h264_qsv", "hevc_qsv",
+                         "h264_amf", "hevc_amf"):
+                if name in line:
+                    listed_encoders.add(name)
+    except Exception:
+        pass
+
+    decode = []
+    if "cuda" in hwaccels:
+        decode.append(("-hwaccel", "cuda"))
+    if "d3d12va" in hwaccels:
+        decode.append(("-hwaccel", "d3d12va"))
+    if "d3d11va" in hwaccels:
+        decode.append(("-hwaccel", "d3d11va"))
+    if "dxva2" in hwaccels:
+        decode.append(("-hwaccel", "dxva2"))
+    if "qsv" in hwaccels:
+        decode.append(("-hwaccel", "qsv"))
+
+    encode_h264 = []
+    _H264_CANDIDATES = [
+        ("h264_nvenc", ["-preset", "p4", "-rc", "vbr", "-cq", "23",
+                         "-pix_fmt", "yuv420p"]),
+        ("h264_qsv",   ["-pix_fmt", "yuv420p"]),
+        ("h264_amf",   ["-pix_fmt", "yuv420p"]),
+    ]
+    for enc_name, enc_params in _H264_CANDIDATES:
+        if enc_name in listed_encoders and _validate_encoder(ff, enc_name, enc_params):
+            encode_h264.append((enc_name, enc_params))
+
+    encode_hevc = []
+    _HEVC_CANDIDATES = [
+        ("hevc_nvenc", ["-preset", "p4", "-rc", "vbr", "-cq", "28",
+                         "-pix_fmt", "yuv420p"]),
+        ("hevc_qsv",   ["-pix_fmt", "yuv420p"]),
+        ("hevc_amf",   ["-pix_fmt", "yuv420p"]),
+    ]
+    for enc_name, enc_params in _HEVC_CANDIDATES:
+        if enc_name in listed_encoders and _validate_encoder(ff, enc_name, enc_params):
+            encode_hevc.append((enc_name, enc_params))
+
+    any_hw = bool(decode or encode_h264 or encode_hevc)
+    _HW_ACCEL = {"decode": decode, "encode_h264": encode_h264,
+                 "encode_hevc": encode_hevc, "any_hw": any_hw}
+    return _HW_ACCEL
+
+
+# ---------------------------------------------------------------------------
+# 解码后端运行时验证
+# ---------------------------------------------------------------------------
+def _verify_decode_backend(decode_args):
+    # 用 1 帧测试视频验证指定解码后端是否真正可用
+    if not decode_args:
+        return True
+    ff = _ffmpeg_exe()
+    if not ff:
+        return False
+    import tempfile
+    tp = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
+            tp = f.name
+        r = subprocess.run(
+            [ff, "-y", "-hide_banner", "-f", "lavfi",
+             "-i", "testsrc=duration=1:size=64x64:rate=1",
+             "-pix_fmt", "yuv420p", tp],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            timeout=15,
+            creationflags=_CREATE_NO_WINDOW,
+        )
+        if r.returncode != 0 or not os.path.isfile(tp):
+            return False
+        cmd = [ff, "-nostdin", "-hide_banner", "-loglevel", "error"] + \
+            list(decode_args) + \
+            ["-i", tp, "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
+        p = subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=15,
+            creationflags=_CREATE_NO_WINDOW,
+        )
+        return p.returncode == 0 and len(p.stdout) >= 64 * 64 * 3
+    except Exception:
+        return False
+    finally:
+        if tp and os.path.isfile(tp):
+            try:
+                os.remove(tp)
+            except Exception:
+                pass
+
+
+def _list_verified_decode_backends():
+    # 返回所有经运行时验证可用的解码后端列表
+    hw = _probe_hw_accel()
+    result = []
+    _LABELS = {
+        "cuda": "CUDA (NVIDIA)",
+        "d3d12va": "D3D12VA",
+        "d3d11va": "D3D11VA",
+        "dxva2": "DXVA2",
+        "qsv": "QSV (Intel)",
+    }
+    _PRIORITY = {"cuda": 0, "dxva2": 10, "d3d11va": 11, "d3d12va": 12, "qsv": 13}
+    for args in hw["decode"]:
+        name = args[-1]
+        label = _LABELS.get(name, name.upper())
+        if _verify_decode_backend(args):
+            result.append((label, args, _PRIORITY.get(name, 99)))
+    result.sort(key=lambda x: x[2])
+    hw_items = [(label, args) for label, args, _p in result]
+    cuda = [item for item in hw_items if "CUDA" in item[0].upper()]
+    others = [item for item in hw_items if "CUDA" not in item[0].upper()]
+    return cuda + others + [("软件解码", None)]
