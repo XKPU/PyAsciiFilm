@@ -1,5 +1,6 @@
 # 共享基础设施
 import logging
+import math
 import os
 import subprocess
 import sys
@@ -8,6 +9,49 @@ import threading
 
 # Windows 下隐藏子进程（ffmpeg 等）弹出的控制台窗口
 _CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW
+
+
+def _cpu_count():
+    # 返回逻辑 CPU 核心数（至少为 1）
+    try:
+        n = os.cpu_count() or 1
+    except Exception:
+        n = 1
+    return max(1, n)
+
+
+# ffmpeg 最高占用（两个 ffmpeg 进程合计的核心占用百分比），默认 35%
+_FFMPEG_MAX_USAGE = 35
+
+
+def _set_ffmpeg_max_usage(pct):
+    # 设置 ffmpeg 合计最高占用百分比（1~100）
+    global _FFMPEG_MAX_USAGE
+    try:
+        p = int(pct)
+    except Exception:
+        p = 35
+    _FFMPEG_MAX_USAGE = max(1, min(100, p))
+
+
+def _ffmpeg_usage_threads(usage=None):
+    # 由合计占用百分比换算成两个 ffmpeg 的总线程数（向上取整）
+    pct = usage if usage is not None else _FFMPEG_MAX_USAGE
+    try:
+        pct = max(1, min(100, int(pct)))
+    except Exception:
+        pct = _FFMPEG_MAX_USAGE
+    return max(1, int(math.ceil(_cpu_count() * pct / 100.0)))
+
+
+def _encode_threads(usage=None):
+    # 编码进程线程数：占合计预算的 75%（至少 1）
+    return max(1, int(round(_ffmpeg_usage_threads(usage) * 0.75)))
+
+
+def _decode_threads(usage=None):
+    # 解码进程线程数：占合计预算的剩余部分（至少 1）
+    return max(1, _ffmpeg_usage_threads(usage) - _encode_threads(usage) + 1)
 
 
 def _app_dir():

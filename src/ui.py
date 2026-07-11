@@ -335,6 +335,7 @@ class ExportSettingsScreen(Screen):
                     Button("▼", id="fps_down"),
                 ),
                 Horizontal(Label("格式 :"), Select(self.FMT_OPTIONS, value="mp4", allow_blank=False, id="fmt")),
+                Horizontal(Label("ffmpeg 最高占用(%):"), Input(value="35", id="usage")),
                 Horizontal(Checkbox("锁定比例（按原视频比例）", value=True, id="lock")),
                 Horizontal(Checkbox("彩色模式", id="color")),
                 Horizontal(
@@ -500,9 +501,15 @@ class ExportSettingsScreen(Screen):
         else:
             decode_args = None
         hwaccel = {"decode_args": decode_args} if decode_args else False
+        try:
+            usage = int(self.query_one("#usage", Input).value)
+        except ValueError:
+            usage = 35
+        usage = max(1, min(100, usage))
         self.app.push_screen(ExportProgressScreen(self.video_path, {
             "w": w, "h": h, "fps": fps, "out": self.out_path,
             "color": color, "fmt": self.fmt, "hwaccel": hwaccel,
+            "ffmpeg_usage": usage,
         }))
 
     def _step_fps(self, delta):
@@ -617,6 +624,7 @@ class ExportProgressScreen(Screen):
                 use_color=self.params["color"], fmt=self.params["fmt"],
                 on_progress=prog, on_done=done, on_log=on_log,
                 hwaccel=self.params.get("hwaccel", True),
+                ffmpeg_usage=self.params.get("ffmpeg_usage", 35),
             )
         except Exception as e:
             self.app.call_from_thread(

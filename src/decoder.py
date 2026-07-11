@@ -8,7 +8,7 @@ import numpy as np
 from analyze import clean_fps
 from utils import (
     _forward_stderr, _ffmpeg_exe, _probe_hw_accel,
-    _CREATE_NO_WINDOW, _log,
+    _CREATE_NO_WINDOW, _log, _decode_threads,
 )
 
 
@@ -16,9 +16,10 @@ from utils import (
 class FrameReader:
 
     def __init__(self, video_path, log=None, force_ffmpeg=False, force_size=None,
-                 metadata=None, hwaccel=True, decode_args=None):
+                 metadata=None, hwaccel=True, decode_args=None, ffmpeg_usage=None):
         self.path = video_path
         self._log = log or _log
+        self._ffmpeg_usage = ffmpeg_usage
         self._force = bool(force_ffmpeg)
         self._force_size = force_size
         self._hwaccel = hwaccel
@@ -116,7 +117,8 @@ class FrameReader:
 
         used = None
         for decode_args in candidates:
-            cmd = [ff, "-nostdin", "-loglevel", "warning"]
+            cmd = [ff, "-nostdin", "-loglevel", "warning",
+                   "-threads", str(_decode_threads(self._ffmpeg_usage))]
             if decode_args:
                 cmd += list(decode_args)
             if seek_seconds > 0:

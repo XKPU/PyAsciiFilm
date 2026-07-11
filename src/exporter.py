@@ -17,6 +17,7 @@ from decoder import FrameReader
 from utils import (
     _forward_stderr, _ffmpeg_exe,
     _probe_hw_accel, _CREATE_NO_WINDOW, _log, _log_error, _log_warn,
+    _set_ffmpeg_max_usage, _encode_threads,
 )
 
 # 灰度->字符查找表构建一次复用
@@ -28,8 +29,10 @@ _FMT_FFMPEG_CODECS = {
     "mov":  [("libx264", ["-pix_fmt", "yuv420p"])],
     "mkv":  [("libx264", ["-pix_fmt", "yuv420p"])],
     "avi":  [("libx264", ["-pix_fmt", "yuv420p"]), ("mpeg4", [])],
-    "webm": [("libvpx", ["-pix_fmt", "yuv420p", "-b:v", "0", "-crf", "18"]),
-             ("libvpx-vp9", ["-pix_fmt", "yuv420p", "-b:v", "0", "-crf", "30"])],
+    "webm": [("libvpx", ["-pix_fmt", "yuv420p", "-deadline", "realtime",
+                         "-cpu-used", "8", "-b:v", "0", "-crf", "18"]),
+             ("libvpx-vp9", ["-pix_fmt", "yuv420p", "-deadline", "realtime",
+                             "-cpu-used", "8", "-b:v", "0", "-crf", "30"])],
 }
 
 # 单帧字节上限
@@ -122,7 +125,7 @@ class QueuedWriter:
             raise self._error
 
 
-def _make_ffmpeg_writer(output_path, fps, w, h, fmt, log):
+def _make_ffmpeg_writer(output_path, fps, w, h, fmt, log, ffmpeg_usage=None):
     # 构造 _FFmpegWriter
     ff = _ffmpeg_exe()
     if not ff:
@@ -144,6 +147,7 @@ def _make_ffmpeg_writer(output_path, fps, w, h, fmt, log):
     for codec, extra in codecs:
         cmd = [
             ff, "-y", "-nostdin", "-loglevel", "warning",
+            "-threads", str(_encode_threads(ffmpeg_usage)),
             "-f", "rawvideo", "-pix_fmt", "bgr24",
             "-s", f"{w}x{h}", "-r", f"{fps:g}", "-i", "-",
             "-an", "-c:v", codec,
@@ -303,12 +307,14 @@ def _grids_from_rgb(rgb, use_color, gray=None):
 # --------------------------- 主导出入口 ---------------------------
 def export_video(video_path, output_path, target_w, target_h, target_fps,
                  use_color=False, fmt="mp4", on_progress=None, on_done=None,
-                 on_log=None, hwaccel=True):
+                 on_log=None, hwaccel=True, ffmpeg_usage=None):
     # 单遍导出：解码的同时按目标帧率抽样并逐帧渲染编码
     decode_args = None
     if isinstance(hwaccel, dict):
         decode_args = hwaccel.get("decode_args")
         hwaccel = bool(decode_args)
+    if ffmpeg_usage is not None:
+        _set_ffmpeg_max_usage(ffmpeg_usage)
     log = _make_log(on_log)
     _log(f"开始导出: 输入={video_path} -> 输出={output_path} (格式 {fmt}, 彩色={use_color})")
     log(f"开始导出: 输入={video_path} -> 输出={output_path} (格式 {fmt}, 彩色={use_color})")
@@ -360,7 +366,8 @@ def export_video(video_path, output_path, target_w, target_h, target_fps,
         log("解码模式: 随包 ffmpeg 自动选择")
     else:
         log("解码模式: ffmpeg 软件解码")
-    writer = _make_ffmpeg_writer(output_path, target_fps, canvas_w, canvas_h, fmt, log)
+    writer = _make_ffmpeg_writer(output_path, target_fps, canvas_w, canvas_h, fmt, log,
+                                 ffmpeg_usage=ffmpeg_usage)
     if writer is None:
         msg = f"错误：无法初始化视频编码器（格式 {fmt}，所有候选编码器均失败）"
         log(msg)
@@ -372,7 +379,7 @@ def export_video(video_path, output_path, target_w, target_h, target_fps,
         canvas_w, canvas_h, interval, est_total, on_progress, log,
         metadata=metadata, hwaccel=hwaccel, decode_args=decode_args,
         atlas=atlas, tile_w=tile_w, tile_h=tile_h,
-        char_to_idx=char_to_idx)
+        char_to_idx=char_to_idx, ffmpeg_usage=ffmpeg_usage)
     writer.release()
     if ok:
         _mux_audio(output_path, video_path, fmt, log)
@@ -467,7 +474,8 @@ def _export_single(video_path, writer, output_path, target_w, target_h, target_f
                    canvas_w, canvas_h, interval, est_total,
                    on_progress, log, metadata=None, hwaccel=True,
                    decode_args=None,
-                   atlas=None, tile_w=None, tile_h=None, char_to_idx=None):
+                   atlas=None, tile_w=None, tile_h=None, char_to_idx=None,
+                   ffmpeg_usage=None):
     # 单线程单遍导出
     out_count = 0
     write_err = False
@@ -475,7 +483,8 @@ def _export_single(video_path, writer, output_path, target_w, target_h, target_f
     _next_out = interval
 
     cap = FrameReader(video_path, log=log, force_ffmpeg=True, force_size=(target_w, target_h),
-                      metadata=metadata, hwaccel=hwaccel, decode_args=decode_args)
+                      metadata=metadata, hwaccel=hwaccel, decode_args=decode_args,
+                      ffmpeg_usage=ffmpeg_usage)
     if on_progress:
         on_progress("render", 0, est_total or 0)
     try:
