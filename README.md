@@ -1,16 +1,20 @@
 # PyAsciiFilm
 
-一个用 Python 编写的程序，可将视频转换为 ASCII 字符画，并直接在终端中播放。
+一个用 Python 编写的程序，可将视频转换为 ASCII 字符画，并直接在终端中播放。支持导出为视频文件。
 
-## Python 非原生依赖库：
->numpy、pillow、opencv-python、setuptools
+## Python 依赖库
 
-## 第三方程序：
-**windows**
->ffplay.exe
+```
+numpy
+opencv-python
+pillow
+imageio-ffmpeg
+textual
+sounddevice
+```
 
-**linux**
->ffplay
+## 构建依赖
 
-## 构建依赖：
->Nuitka
+```
+Nuitka
+```
