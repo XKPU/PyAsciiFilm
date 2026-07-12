@@ -21,8 +21,8 @@ def _exporter():
     # 惰性加载导出模块
     global _EXPORTER
     if _EXPORTER is None:
-        from exporter import export_video, _load_mono_font, _MAX_FRAME_BYTES
-        _EXPORTER = (export_video, _load_mono_font, _MAX_FRAME_BYTES)
+        from exporter import export_video, _load_mono_font, _MAX_CANVAS_W, _MAX_CANVAS_H, _ENCODER_MAX_SIZE
+        _EXPORTER = (export_video, _load_mono_font, _MAX_CANVAS_W, _MAX_CANVAS_H, _ENCODER_MAX_SIZE)
     return _EXPORTER
 
 
@@ -119,6 +119,7 @@ class ExportSettingsScreen(Screen):
     #outhint { color: $text-muted; }
     #sizhint { color: $text-muted; }
     #err { color: $error; height: auto; }
+    #warn { color: $warning; height: auto; }
     """
 
     FMT_OPTIONS = [
@@ -215,10 +216,10 @@ class ExportSettingsScreen(Screen):
             return 160, 120
         char_w = min(self._MAX_REC_CHAR_W, max(1, round(self.src_w / self.cell_w)))
         char_h = self._char_h_for_w(char_w)
-        frame_bytes, _, _ = self._canvas_bytes(char_w, char_h)
-        _MAX_FRAME_BYTES = _exporter()[2]
-        if frame_bytes > _MAX_FRAME_BYTES:
-            scale = (_MAX_FRAME_BYTES / frame_bytes) ** 0.5
+        _, cw, ch = self._canvas_bytes(char_w, char_h)
+        _MAX_W, _MAX_H = _exporter()[2], _exporter()[3]
+        if cw > _MAX_W or ch > _MAX_H:
+            scale = min(_MAX_W / cw, _MAX_H / ch)
             char_w = max(1, int(char_w * scale))
             char_h = self._char_h_for_w(char_w)
         return char_w, char_h
@@ -230,15 +231,25 @@ class ExportSettingsScreen(Screen):
                 f"字符（对应画布 {rcw}x{rch}px ≈ 原视频比例）")
         if char_w and char_h and char_w > 0 and char_h > 0:
             fb, cw, ch = self._canvas_bytes(char_w, char_h)
-            over = " 单帧过大" if fb > _exporter()[2] else ""
+            _MAX_W, _MAX_H = _exporter()[2], _exporter()[3]
+            over = " 超出上限" if cw > _MAX_W or ch > _MAX_H else ""
             base += f"\n当前 {char_w}x{char_h} → 画布 {cw}x{ch}px（单帧约 {fb / 1048576:.1f}MB{over}）"
         return base
 
     def _refresh_size_hint(self):
-        # 读取当前宽高输入框的值，更新画布尺寸提示文案
+        # 读取当前宽高输入框的值，更新画布尺寸提示文案与硬件编码警告
         w = self._safe_int(self.query_one("#w", Input).value)
         h = self._safe_int(self.query_one("#h", Input).value)
         self.query_one("#sizhint", Static).update(self._size_hint_text(w, h))
+        warn = ""
+        if w and h and w > 0 and h > 0:
+            _, cw, ch = self._canvas_bytes(w, h)
+            _ENCODER_MAX_SIZE = _exporter()[4]
+            for name, (mw, mh) in _ENCODER_MAX_SIZE.items():
+                if cw > mw or ch > mh:
+                    warn = f"画布 {cw}x{ch}px 超出 {name} 限制，将使用软件编码"
+                    break
+        self.query_one("#warn", Static).update(warn)
 
     def compose(self) -> ComposeResult:
         # 构建导出设置面板布局
@@ -269,6 +280,7 @@ class ExportSettingsScreen(Screen):
                 Horizontal(Label("输出 :"), Input(value=self.out_path, id="out_disp"), Button("浏览…", id="browse")),
                 Static("（点击「浏览…」选择图形对话框，或直接输入路径）", id="outhint"),
                 Static("", id="err"),
+                Static("", id="warn"),
                 Horizontal(Button("确认导出", id="ok"), Button("取消", id="cancel")),
                 id="panel",
             ),
@@ -411,11 +423,11 @@ class ExportSettingsScreen(Screen):
         if w <= 0 or h <= 0 or fps <= 0:
             self.query_one("#err", Static).update("宽度/高度/帧率必须大于 0")
             return
-        frame_bytes, cw, ch = self._canvas_bytes(w, h)
-        if frame_bytes > _exporter()[2]:
+        _, cw, ch = self._canvas_bytes(w, h)
+        _MAX_W, _MAX_H = _exporter()[2], _exporter()[3]
+        if cw > _MAX_W or ch > _MAX_H:
             self.query_one("#err", Static).update(
-                f"字符网格过大：{w}x{h} → 画布 {cw}x{ch}px（单帧 {frame_bytes / 1048576:.0f}MB）。"
-                f"减小字符数，推荐 {self.rec_w}x{self.rec_h}")
+                f"画布超出上限：{cw}x{ch}px（上限 {_MAX_W}x{_MAX_H}px）")
             return
         if fps > self.src_fps + 1e-6:
             self.query_one("#err", Static).update(

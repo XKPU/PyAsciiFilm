@@ -35,8 +35,14 @@ _FMT_FFMPEG_CODECS = {
                              "-cpu-used", "8", "-b:v", "0", "-crf", "30"])],
 }
 
-# 单帧字节上限
-_MAX_FRAME_BYTES = 50 * 1024 * 1024
+# 各硬件编码器最大画布宽高上限（像素），超出则自动回退软件编码
+_ENCODER_MAX_SIZE = {
+    "h264_nvenc": (4096, 4096),
+    "h264_qsv":   (4096, 4096),
+    "h264_amf":   (4096, 4096),
+}
+_MAX_CANVAS_W = 8192
+_MAX_CANVAS_H = 8192
 
 
 class _FFmpegWriter:
@@ -132,6 +138,10 @@ def _make_ffmpeg_writer(output_path, fps, w, h, fmt, log, ffmpeg_usage=None):
         hw = _probe_hw_accel()
         for hw_codec, hw_params in hw["encode_h264"]:
             if hw_codec not in [c[0] for c in codecs]:
+                max_w, max_h = _ENCODER_MAX_SIZE.get(hw_codec, (_MAX_CANVAS_W, _MAX_CANVAS_H))
+                if w > max_w or h > max_h:
+                    log(f"画布 {w}x{h}px 超出 {hw_codec} 限制 {max_w}x{max_h}，跳过")
+                    continue
                 codecs.insert(0, (hw_codec, hw_params))
     for codec, extra in codecs:
         cmd = [
@@ -336,11 +346,10 @@ def export_video(video_path, output_path, target_w, target_h, target_fps,
     canvas_w += canvas_w % 2
     canvas_h += canvas_h % 2
 
-    frame_bytes = canvas_w * canvas_h * 3
-    if frame_bytes > _MAX_FRAME_BYTES:
+    if canvas_w > _MAX_CANVAS_W or canvas_h > _MAX_CANVAS_H:
         msg = (
-            f"错误：目标分辨率过大（字符网格 {target_w}x{target_h} → 画布 "
-            f"{canvas_w}x{canvas_h}，单帧约 {frame_bytes / 1048576:.0f}MB）"
+            f"错误：画布尺寸超出上限（{canvas_w}x{canvas_h}px，"
+            f"上限 {_MAX_CANVAS_W}x{_MAX_CANVAS_H}px）"
         )
         log(msg)
         if on_done:
