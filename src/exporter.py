@@ -12,9 +12,9 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 from ascii_art import ASCII_CHARS, make_lookup
-from analyze import clean_fps
 from decoder import FrameReader
 from utils import (
+    clean_fps,
     _forward_stderr, _ffmpeg_exe,
     _probe_hw_accel, _CREATE_NO_WINDOW, _log, _log_error, _log_warn,
     _set_ffmpeg_max_usage, _encode_threads,

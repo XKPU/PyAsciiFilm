@@ -10,15 +10,16 @@ from textual.widgets import (
 from textual.containers import Vertical, Horizontal, ScrollableContainer
 from textual import events
 
-from utils import _list_verified_decode_backends, _log, _log_warn
+from utils import _list_verified_decode_backends, _log
 from ascii_art import reload_charset, ASCII_CHARS
+from dialogs import SelectingScreen
 
 
 _EXPORTER = None
 
 
 def _exporter():
-    # 惰性加载导出模块（避免启动即加载 cv2 / imageio_ffmpeg 等重型依赖）
+    # 惰性加载导出模块
     global _EXPORTER
     if _EXPORTER is None:
         from exporter import export_video, _load_mono_font, _MAX_FRAME_BYTES
@@ -27,99 +28,6 @@ def _exporter():
 
 
 # ---------------------------------------------------------------------------
-# Textual 内嵌路径输入框（文件选择的回退方案，需要 textual）
-# ---------------------------------------------------------------------------
-
-class InputOnlyScreen(App):
-    # 轻量级 Textual 应用：单行输入框 + 确定/取消按钮
-
-    CSS = """
-    Screen { align: center middle; }
-    #ipanel { width: 72; height: auto; border: round $accent; padding: 1 2; }
-    Input { width: 1fr; }
-    #err { color: $error; height: auto; }
-    """
-
-    def __init__(self, title, prompt, initial=""):
-        super().__init__()
-        self._title = title
-        self._prompt = prompt
-        self._initial = initial
-
-    def compose(self) -> ComposeResult:
-        # 构建界面布局
-        yield Header()
-        yield Vertical(
-            Static(self._prompt),
-            Input(value=self._initial, id="path"),
-            Static("", id="err"),
-            Horizontal(Button("确定", id="ok"), Button("取消", id="cancel")),
-            id="ipanel",
-        )
-        yield Footer()
-
-    def on_mount(self) -> None:
-        # 挂载时设置窗口标题并自动聚焦输入框
-        self.title = self._title
-        self.query_one("#path", Input).focus()
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        # 用户在输入框按回车时触发确认
-        if event.input.id == "path":
-            self._confirm()
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        # 处理按钮点击
-        if event.button.id == "cancel":
-            self.app.exit(result=None)
-            return
-        self._confirm()
-
-    def _confirm(self):
-        # 校验输入非空后提交结果
-        val = self.query_one("#path", Input).value.strip()
-        if not val:
-            self.query_one("#err", Static).update("请输入路径")
-            return
-        self.app.exit(result=val)
-
-
-def _input_select_video():
-    # 回退方案：在 Textual 内嵌输入框中让用户手动输入视频路径
-    try:
-        return InputOnlyScreen(
-            "选择视频",
-            "输入视频文件路径，回车或点击确定：",
-        ).run()
-    except Exception:
-        return None
-
-
-# ---------------------------------------------------------------------------
-# 输出文件保存对话框
-# ---------------------------------------------------------------------------
-
-def _system_browse_output(initial, fmt):
-    # 通过 tkinter 弹出系统原生「另存为」对话框
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-        ext = "." + fmt
-        root = tk.Tk()
-        root.withdraw()
-        path = filedialog.asksaveasfilename(
-            title="选择输出文件位置",
-            defaultextension=ext,
-            initialfile=os.path.basename(initial),
-            filetypes=[(f"{fmt.upper()} 文件", f"*{ext}"), ("所有文件", "*.*")],
-        )
-        root.destroy()
-        return path or None
-    except Exception:
-        _log_warn("系统保存对话框不可用，回退终端输入")
-        return None
-
-
 # ---------------------------------------------------------------------------
 # 主菜单
 # ---------------------------------------------------------------------------
@@ -135,10 +43,6 @@ class MenuApp(App):
 
     BINDINGS = [("q", "quit", "退出")]
 
-    def __init__(self, video_path):
-        super().__init__()
-        self.video_path = video_path
-
     def on_mount(self) -> None:
         # 挂载时设置窗口标题并聚焦列表
         self.title = "PyAsciiFilm"
@@ -149,9 +53,8 @@ class MenuApp(App):
         yield Header()
         yield ListView(
             ListItem(Label("导出为视频"), id="export"),
-            ListItem(Label("播放灰度视频"), id="play_gray_audio"),
-            ListItem(Label("播放全彩色视频"), id="play_color_audio"),
-            ListItem(Label("重新选择视频"), id="reselect"),
+            ListItem(Label("以灰度模式播放视频"), id="play_gray_audio"),
+            ListItem(Label("以全彩模式播放视频"), id="play_color_audio"),
             ListItem(Label("刷新配置文件"), id="reload_config"),
             ListItem(Label("退出"), id="quit"),
         )
@@ -161,16 +64,13 @@ class MenuApp(App):
         # 处理菜单项选择
         if event.item.id == "export":
             _log("菜单：选择导出为视频")
-            self.push_screen(ExportSettingsScreen(self.video_path))
+            self.push_screen(ExportSettingsScreen())
         elif event.item.id == "play_gray_audio":
             _log("菜单：播放灰度视频（带音频）")
-            self.app.exit(result=("play", False))
+            self._pick_and_play(False)
         elif event.item.id == "play_color_audio":
             _log("菜单：播放全彩色视频（带音频）")
-            self.app.exit(result=("play", True))
-        elif event.item.id == "reselect":
-            _log("菜单：重新选择视频")
-            self.app.exit(result=("reselect",))
+            self._pick_and_play(True)
         elif event.item.id == "reload_config":
             chars = reload_charset()
             _log("菜单：刷新配置文件")
@@ -178,6 +78,16 @@ class MenuApp(App):
         else:
             _log("菜单：退出")
             self.app.exit(result="quit")
+
+    def _pick_and_play(self, color):
+        self.push_screen(SelectingScreen(
+            initial=None, on_done=lambda p: self._after_pick_play(p, color)))
+
+    def _after_pick_play(self, path, color):
+        # 选片结束后返回菜单或进入播放
+        self.pop_screen()
+        if path:
+            self.app.exit(result=("play", color, path))
 
 
 # ---------------------------------------------------------------------------
@@ -253,24 +163,57 @@ class ExportSettingsScreen(Screen):
 
     _MAX_REC_CHAR_W = 200
 
-    def __init__(self, video_path):
+    def __init__(self):
         super().__init__()
-        self.video_path = video_path
-        self.src_w, self.src_h, self.src_fps = _probe_video(video_path)
+        self.video_path = None
+        self.src_w, self.src_h, self.src_fps = 0, 0, 0.0
         try:
             _, self.cell_w, self.cell_h = _exporter()[1](ASCII_CHARS)
         except Exception:
             self.cell_w, self.cell_h = 10, 20
-        self.rec_w, self.rec_h = self._recommended_char_size()
+        self.rec_w, self.rec_h = 160, 120
         self.def_w, self.def_h = self.rec_w, self.rec_h
-        base, _ = os.path.splitext(video_path)
-        self.out_path = base + "_ascii.mp4"
+        self.out_path = ""
         self.fmt = "mp4"
         self.lock_ratio = True
         self._last_click = 0.0
         self._expect_w = None
         self._expect_h = None
         self._decode_backends = None
+
+    def _select_video(self):
+        # 在 Textual 内提示“请选择视频”，随后弹出 tkinter 原生对话框选片
+        self.app.push_screen(SelectingScreen(
+            initial=self.video_path, on_done=self._on_video_picked))
+
+    def _on_video_picked(self, path):
+        # 文件浏览器回调：选定后刷新界面并关闭浏览器，取消则仅关闭浏览器
+        if path:
+            self._set_video(path)
+        self.app.pop_screen()
+
+    def _set_video(self, video_path):
+        # 设置视频并刷新源信息、推荐尺寸与输出路径
+        self.video_path = video_path
+        self.src_w, self.src_h, self.src_fps = _probe_video(video_path)
+        self.rec_w, self.rec_h = self._recommended_char_size()
+        self.def_w, self.def_h = self.rec_w, self.rec_h
+        base, _ = os.path.splitext(video_path)
+        self.out_path = base + "_ascii.mp4"
+        try:
+            self.query_one("#srcinfo", Static).update(
+                f"原视频: {self.src_w}x{self.src_h}  帧率: {self.src_fps:.2f} fps")
+        except Exception:
+            pass
+        try:
+            self.query_one("#w", Input).value = str(self.def_w)
+            self.query_one("#h", Input).value = str(self.def_h)
+        except Exception:
+            pass
+        try:
+            self.query_one("#sizhint", Static).update(self._size_hint_text())
+        except Exception:
+            pass
 
     def _char_h_for_w(self, char_w):
         # 根据字符宽度和原视频比例计算对应的字符高度
@@ -324,13 +267,13 @@ class ExportSettingsScreen(Screen):
         yield Header()
         yield ScrollableContainer(
             Vertical(
-                Static(f"原视频: {self.src_w}x{self.src_h}  帧率: {self.src_fps:.2f} fps"),
+                Static("原视频: 尚未选择", id="srcinfo"),
                 Horizontal(Label("宽度 :"), Input(value=str(self.def_w), id="w")),
                 Horizontal(Label("高度 :"), Input(value=str(self.def_h), id="h")),
                 Static(self._size_hint_text(), id="sizhint"),
                 Horizontal(
                     Label("帧率 :"),
-                    Input(value=str(int(self.src_fps)), id="fps"),
+                    Input(value="30", id="fps"),
                     Button("▲", id="fps_up"),
                     Button("▼", id="fps_down"),
                 ),
@@ -356,7 +299,8 @@ class ExportSettingsScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        # 挂载时启动后台线程探测可用的硬件加速解码后端
+        # 挂载后先选视频（保留本屏，文件浏览器覆盖其上），再探测解码后端
+        self.call_after_refresh(self._select_video)
         self.run_worker(self._init_hw_accel, thread=True)
 
     def _init_hw_accel(self):
@@ -462,12 +406,15 @@ class ExportSettingsScreen(Screen):
             self.app.pop_screen()
             return
         if bid == "browse":
-            self._browse_output()
+            self._select_video()
             return
         if bid != "ok":
             return
 
         # ---- 校验导出参数 ----
+        if not self.video_path:
+            self.query_one("#err", Static).update("请先选择视频文件")
+            return
         try:
             w = int(self.query_one("#w", Input).value)
             h = int(self.query_one("#h", Input).value)
@@ -521,22 +468,12 @@ class ExportSettingsScreen(Screen):
         fps = max(1.0, min(fps + delta, self.src_fps))
         self.query_one("#fps", Input).value = str(int(round(fps)))
 
-    # ---- 输出路径选择 ----
-
-    def _browse_output(self):
-        # 弹出输出路径选择
-        path = _system_browse_output(self.out_path, self.fmt)
-        if path:
-            self._set_out_path(path)
-        else:
-            self.app.push_screen(PathInputModal(self.out_path, self._set_out_path))
-
     def on_output_click(self):
         # 输出路径双击检测
         now = time.monotonic()
         if self._last_click and (now - self._last_click) < 0.4:
             self._last_click = 0.0
-            self.app.push_screen(PathInputModal(self.out_path, self._set_out_path))
+            self._select_video()
         else:
             self._last_click = now
 

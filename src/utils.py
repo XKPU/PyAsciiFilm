@@ -61,13 +61,6 @@ def _app_dir():
     return os.getcwd()
 
 
-def _spawn_kwargs(**extra):
-    # 构造子进程 Popen/run 的通用关键字参数
-    kw = {"creationflags": _CREATE_NO_WINDOW}
-    kw.update(extra)
-    return kw
-
-
 # ---------------------------------------------------------------------------
 # 持久日志文件（位于程序所在目录，与 setting.json 同目录，启动即清空）
 # ---------------------------------------------------------------------------
@@ -136,6 +129,16 @@ def _default_log(msg):
         pass
 
 
+def clean_fps(fps):
+    # 把 cv2 探测到的帧率收拢为名义整数帧率
+    if fps is None or fps <= 0:
+        return 30.0
+    r = round(fps)
+    if abs(fps - r) < 0.5:
+        return float(r)
+    return float(fps)
+
+
 # ---------------------------------------------------------------------------
 # ffmpeg 路径
 # ---------------------------------------------------------------------------
@@ -143,7 +146,7 @@ _FFMPEG = None
 
 
 def _ffmpeg_exe():
-    # 返回随包 ffmpeg 路径（缓存）；不可用返回 None
+    # 返回随包 ffmpeg 路径；不可用返回 None
     global _FFMPEG
     if _FFMPEG is not None:
         return _FFMPEG

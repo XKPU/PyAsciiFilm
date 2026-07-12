@@ -5,8 +5,8 @@ import time
 
 import cv2
 import numpy as np
-from analyze import clean_fps
 from utils import (
+    clean_fps,
     _forward_stderr, _ffmpeg_exe, _probe_hw_accel,
     _CREATE_NO_WINDOW, _log, _decode_threads,
 )
