@@ -1,6 +1,6 @@
 # TUI 界面模块
 import os
-import time
+import threading
 
 from textual.app import App, ComposeResult
 from textual.screen import Screen
@@ -8,11 +8,10 @@ from textual.widgets import (
     ListView, ListItem, Label, Header, Footer, Input, Button, Static, Checkbox, Select, ProgressBar, RichLog,
 )
 from textual.containers import Vertical, Horizontal, ScrollableContainer
-from textual import events
 
 from utils import _list_verified_decode_backends, _log
 from ascii_art import reload_charset, ASCII_CHARS
-from dialogs import SelectingScreen
+from dialogs import SelectingScreen, select_output_path
 
 
 _EXPORTER = None
@@ -27,7 +26,6 @@ def _exporter():
     return _EXPORTER
 
 
-# ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 # 主菜单
 # ---------------------------------------------------------------------------
@@ -64,7 +62,8 @@ class MenuApp(App):
         # 处理菜单项选择
         if event.item.id == "export":
             _log("菜单：选择导出为视频")
-            self.push_screen(ExportSettingsScreen())
+            self.push_screen(SelectingScreen(
+                initial=None, on_done=self._after_export_pick))
         elif event.item.id == "play_gray_audio":
             _log("菜单：播放灰度视频（带音频）")
             self._pick_and_play(False)
@@ -74,10 +73,18 @@ class MenuApp(App):
         elif event.item.id == "reload_config":
             chars = reload_charset()
             _log("菜单：刷新配置文件")
-            self.notify(f"配置已刷新，字符集已重新加载（共 {len(chars)} 个字符）")
+            self.notify(f"配置已刷新，字符集已重新加载：{chars}")
         else:
             _log("菜单：退出")
             self.app.exit(result="quit")
+
+    def _after_export_pick(self, path):
+        # 导出前先选片：未选择则报错并返回主菜单，否则进入设置面板
+        self.pop_screen()
+        if path:
+            self.push_screen(ExportSettingsScreen(video_path=path))
+        else:
+            self.notify("未选择视频，已返回主菜单", severity="error")
 
     def _pick_and_play(self, color):
         self.push_screen(SelectingScreen(
@@ -94,59 +101,20 @@ class MenuApp(App):
 # 导出设置面板
 # ---------------------------------------------------------------------------
 
-class OutputPathStatic(Static):
-    # 可点击的输出路径展示控件
-
-    def on_click(self, event: events.Click) -> None:
-        self.screen.on_output_click()
-
-
-class PathInputModal(Screen):
-    # 模态输入框：用于手动输入导出文件路径
-
-    CSS = """
-    Screen { align: center middle; }
-    #pmod { width: 60; height: auto; border: round $accent; padding: 1 2; }
-    Input { width: 50; }
-    """
-
-    def __init__(self, current: str, callback):
-        super().__init__()
-        self.current = current
-        self.callback = callback
-
-    def compose(self) -> ComposeResult:
-        # 构建布局
-        yield Vertical(
-            Static("输入输出文件路径，回车或点击确定："),
-            Input(value=self.current, id="path"),
-            Horizontal(Button("确定", id="ok"), Button("取消", id="cancel")),
-            id="pmod",
-        )
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        # 处理按钮
-        if event.button.id == "cancel":
-            self.app.pop_screen()
-            return
-        val = self.query_one("#path", Input).value.strip()
-        if val:
-            self.callback(val)
-        self.app.pop_screen()
-
-
 class ExportSettingsScreen(Screen):
     # 导出设置面板
+
+    BINDINGS = [("escape", "back_to_menu", "返回主菜单")]
 
     CSS = """
     Screen { align: center top; }
     #scroller { width: 100%; height: 1fr; }
     #panel { width: 100%; height: auto; padding: 1 2; }
-    #panel > Horizontal { height: auto; }
+    #panel > Horizontal { height: auto; margin: 1 0; }
     Label { width: auto; }
     Input { width: 1fr; }
     Select { width: 1fr; }
-    #out_disp { width: 1fr; height: auto; border: round $accent; padding: 0 1; }
+    #out_disp { width: 1fr; height: 3; border: round $accent; padding: 0 1; }
     #browse { width: 12; }
     #outhint { color: $text-muted; }
     #sizhint { color: $text-muted; }
@@ -163,9 +131,9 @@ class ExportSettingsScreen(Screen):
 
     _MAX_REC_CHAR_W = 200
 
-    def __init__(self):
+    def __init__(self, video_path=None):
         super().__init__()
-        self.video_path = None
+        self.video_path = video_path
         self.src_w, self.src_h, self.src_fps = 0, 0, 0.0
         try:
             _, self.cell_w, self.cell_h = _exporter()[1](ASCII_CHARS)
@@ -176,7 +144,6 @@ class ExportSettingsScreen(Screen):
         self.out_path = ""
         self.fmt = "mp4"
         self.lock_ratio = True
-        self._last_click = 0.0
         self._expect_w = None
         self._expect_h = None
         self._decode_backends = None
@@ -185,6 +152,12 @@ class ExportSettingsScreen(Screen):
         # 在 Textual 内提示“请选择视频”，随后弹出 tkinter 原生对话框选片
         self.app.push_screen(SelectingScreen(
             initial=self.video_path, on_done=self._on_video_picked))
+
+    def _select_output(self):
+        # 弹出 tkinter 保存对话框选择导出输出路径
+        path = select_output_path(self.out_path, self.fmt)
+        if path:
+            self._set_out_path(path)
 
     def _on_video_picked(self, path):
         # 文件浏览器回调：选定后刷新界面并关闭浏览器，取消则仅关闭浏览器
@@ -208,6 +181,11 @@ class ExportSettingsScreen(Screen):
         try:
             self.query_one("#w", Input).value = str(self.def_w)
             self.query_one("#h", Input).value = str(self.def_h)
+            self.query_one("#fps", Input).value = str(int(round(self.src_fps)))
+        except Exception:
+            pass
+        try:
+            self.query_one("#out_disp", Input).value = self.out_path
         except Exception:
             pass
         try:
@@ -288,8 +266,8 @@ class ExportSettingsScreen(Screen):
                     ),
                     id="decode_mode_row",
                 ),
-                Horizontal(Label("输出 :"), OutputPathStatic(self.out_path, id="out_disp"), Button("浏览…", id="browse")),
-                Static("（点击「浏览…」用图形对话框选择，或双击路径手动输入）", id="outhint"),
+                Horizontal(Label("输出 :"), Input(value=self.out_path, id="out_disp"), Button("浏览…", id="browse")),
+                Static("（点击「浏览…」选择图形对话框，或直接输入路径）", id="outhint"),
                 Static("", id="err"),
                 Horizontal(Button("确认导出", id="ok"), Button("取消", id="cancel")),
                 id="panel",
@@ -299,9 +277,16 @@ class ExportSettingsScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        # 挂载后先选视频（保留本屏，文件浏览器覆盖其上），再探测解码后端
-        self.call_after_refresh(self._select_video)
+        # 进入设置前视频已在菜单选好；未选（理论上不会）则退回选片
+        if self.video_path:
+            self._set_video(self.video_path)
+        else:
+            self.call_after_refresh(self._select_video)
         self.run_worker(self._init_hw_accel, thread=True)
+
+    def action_back_to_menu(self):
+        # Esc 快捷键：放弃设置直接返回主菜单
+        self.app.pop_screen()
 
     def _init_hw_accel(self):
         # 后台线程：探测所有经验证可用的解码后端
@@ -389,7 +374,7 @@ class ExportSettingsScreen(Screen):
             self.fmt = event.value
             base, _ = os.path.splitext(self.out_path)
             self.out_path = base + "." + self.fmt
-            self.query_one("#out_disp", OutputPathStatic).update(self.out_path)
+            self.query_one("#out_disp", Input).value = self.out_path
 
     # ---- 帧率步进调整 ----
 
@@ -406,7 +391,7 @@ class ExportSettingsScreen(Screen):
             self.app.pop_screen()
             return
         if bid == "browse":
-            self._select_video()
+            self._select_output()
             return
         if bid != "ok":
             return
@@ -468,20 +453,11 @@ class ExportSettingsScreen(Screen):
         fps = max(1.0, min(fps + delta, self.src_fps))
         self.query_one("#fps", Input).value = str(int(round(fps)))
 
-    def on_output_click(self):
-        # 输出路径双击检测
-        now = time.monotonic()
-        if self._last_click and (now - self._last_click) < 0.4:
-            self._last_click = 0.0
-            self._select_video()
-        else:
-            self._last_click = now
-
     def _set_out_path(self, val):
         # 设置输出路径
         base, _ = os.path.splitext(val)
         self.out_path = base + "." + self.fmt
-        self.query_one("#out_disp", OutputPathStatic).update(self.out_path)
+        self.query_one("#out_disp", Input).value = self.out_path
 
 
 # ---------------------------------------------------------------------------
@@ -490,6 +466,8 @@ class ExportSettingsScreen(Screen):
 
 class ExportProgressScreen(Screen):
     # 导出进度界面
+
+    BINDINGS = [("escape", "back_to_menu", "返回主菜单")]
 
     CSS = """
     Screen { align: center middle; }
@@ -504,6 +482,7 @@ class ExportProgressScreen(Screen):
         super().__init__()
         self.video_path = video_path
         self.params = params
+        self._cancel = threading.Event()
 
     def compose(self) -> ComposeResult:
         # 构建布局
@@ -518,10 +497,13 @@ class ExportProgressScreen(Screen):
         )
 
     def on_mount(self) -> None:
-        # 挂载时禁用返回按钮，启动后台导出线程
-        self.query_one("#back", Button).disabled = True
-        import threading
+        # 挂载即启动后台导出线程；返回按钮始终可用，用于中断导出
         threading.Thread(target=self._worker, daemon=True).start()
+
+    def _request_exit(self):
+        # 中断导出并清理相关进程后返回主菜单
+        self._cancel.set()
+        self.app.pop_screen()
 
     def _worker(self):
         # 后台线程：调用 export_video 执行实际导出
@@ -529,21 +511,27 @@ class ExportProgressScreen(Screen):
 
         def prog(stage, done, total):
             def upd():
-                if stage == "init":
-                    self.query_one("#status", Static).update("初始化导出…")
-                elif stage == "analyze":
-                    self.query_one("#status", Static).update(f"分析中: {done}/{total}")
-                else:
-                    self.query_one("#status", Static).update(f"导出中: {done}/{total}")
-                    pct = (done / total * 100) if total else 0
-                    self.query_one("#bar", ProgressBar).update(progress=pct)
+                try:
+                    if stage == "init":
+                        self.query_one("#status", Static).update("初始化导出…")
+                    elif stage == "analyze":
+                        self.query_one("#status", Static).update(f"分析中: {done}/{total}")
+                    else:
+                        self.query_one("#status", Static).update(f"导出中: {done}/{total}")
+                        pct = (done / total * 100) if total else 0
+                        self.query_one("#bar", ProgressBar).update(progress=pct)
+                except Exception:
+                    pass
             self.app.call_from_thread(upd)
 
         def done(success, msg):
             def upd():
-                self.query_one("#result", Static).update(msg)
-                self.query_one("#bar", ProgressBar).update(progress=100)
-                self.query_one("#back", Button).disabled = False
+                try:
+                    self.query_one("#result", Static).update(msg)
+                    self.query_one("#bar", ProgressBar).update(progress=100)
+                    self.query_one("#back", Button).disabled = False
+                except Exception:
+                    pass
             self.app.call_from_thread(upd)
 
         def on_log(msg):
@@ -562,6 +550,7 @@ class ExportProgressScreen(Screen):
                 on_progress=prog, on_done=done, on_log=on_log,
                 hwaccel=self.params.get("hwaccel", True),
                 ffmpeg_usage=self.params.get("ffmpeg_usage", 35),
+                cancel=self._cancel.is_set,
             )
         except Exception as e:
             self.app.call_from_thread(
@@ -569,9 +558,13 @@ class ExportProgressScreen(Screen):
             )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        # 返回按钮点击时弹出进度界面
+        # 返回按钮：中断导出并返回主菜单
         if event.button.id == "back":
-            self.app.pop_screen()
+            self._request_exit()
+
+    def action_back_to_menu(self):
+        # Esc 快捷键：随时中断导出并返回主菜单
+        self._request_exit()
 
 
 # ---------------------------------------------------------------------------

@@ -63,7 +63,7 @@ class FrameReader:
                     self._cv2 = cap
                     self.width, self.height = w, h
                     self.fps, self.frame_count = fps, n
-                    self.duration = self._probe_duration_ffmpeg(_ffmpeg_exe()) or (n / fps if fps else 0.0)
+                    self.duration = (n / fps) if fps else 0.0
                     return
                 cap.release()
         self._open_ffmpeg()
@@ -196,25 +196,6 @@ class FrameReader:
             cap.release()
 
         return w, h, fps, n, dur
-
-    def _probe_duration_ffmpeg(self, ff):
-        # 单独用 ffmpeg 探测真实时长（比 cv2 帧数可靠）
-        if not ff:
-            return 0.0
-        try:
-            res = subprocess.run(
-                [ff, "-hide_banner", "-i", self.path],
-                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                text=True,
-                creationflags=_CREATE_NO_WINDOW,
-            )
-            txt = res.stderr or ""
-        except Exception:
-            return 0.0
-        md = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", txt)
-        if md:
-            return int(md.group(1)) * 3600 + int(md.group(2)) * 60 + float(md.group(3))
-        return 0.0
 
     def read(self):
         # 读取一帧

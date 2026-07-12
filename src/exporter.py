@@ -16,7 +16,7 @@ from decoder import FrameReader
 from utils import (
     clean_fps,
     _forward_stderr, _ffmpeg_exe,
-    _probe_hw_accel, _CREATE_NO_WINDOW, _log, _log_error, _log_warn,
+    _probe_hw_accel, _CREATE_NO_WINDOW, _log,
     _set_ffmpeg_max_usage, _encode_threads,
 )
 
@@ -42,22 +42,12 @@ _MAX_FRAME_BYTES = 50 * 1024 * 1024
 class _FFmpegWriter:
     # 基于随包 ffmpeg 子进程的视频写出器
 
-    def __init__(self, proc, codec, w, h):
+    def __init__(self, proc, codec):
         self._proc = proc
         self.codec = codec
-        self._w, self._h = w, h
-        self._failed = False
 
     def write(self, frame):
-        try:
-            self._proc.stdin.write(frame.tobytes())
-        except Exception:
-            self._failed = True
-            raise
-
-    @property
-    def failed(self):
-        return self._failed
+        self._proc.stdin.write(frame.tobytes())
 
     def release(self):
         try:
@@ -110,16 +100,15 @@ class QueuedWriter:
         self._queue.put(frame)
 
     @property
-    def failed(self):
-        return self._error is not None or self._writer.failed
-
-    @property
     def codec(self):
         return self._writer.codec
 
     def release(self):
-        # 通知编码线程停止并等待结束
-        self._queue.put(None)
+        # 通知编码线程停止并等待结束（非阻塞入队，避免编码慢时卡住）
+        try:
+            self._queue.put_nowait(None)
+        except Exception:
+            pass
         self._thread.join(timeout=60)
         if self._error:
             raise self._error
@@ -167,7 +156,7 @@ def _make_ffmpeg_writer(output_path, fps, w, h, fmt, log, ffmpeg_usage=None):
         if proc.poll() is not None:
             log(f"错误：编码器 {codec} 初始化失败（格式 {fmt}）")
             continue
-        return _FFmpegWriter(proc, codec, w, h)
+        return _FFmpegWriter(proc, codec)
     return None
 
 
@@ -307,7 +296,9 @@ def _grids_from_rgb(rgb, use_color, gray=None):
 # --------------------------- 主导出入口 ---------------------------
 def export_video(video_path, output_path, target_w, target_h, target_fps,
                  use_color=False, fmt="mp4", on_progress=None, on_done=None,
-                 on_log=None, hwaccel=True, ffmpeg_usage=None):
+                 on_log=None, hwaccel=True, ffmpeg_usage=None, cancel=None):
+    # 单遍导出：解码的同时按目标帧率抽样并逐帧渲染编码
+    # cancel: 可选的无参可调用对象，返回 True 时中断导出并清理所有相关进程
     # 单遍导出：解码的同时按目标帧率抽样并逐帧渲染编码
     decode_args = None
     if isinstance(hwaccel, dict):
@@ -316,7 +307,6 @@ def export_video(video_path, output_path, target_w, target_h, target_fps,
     if ffmpeg_usage is not None:
         _set_ffmpeg_max_usage(ffmpeg_usage)
     log = _make_log(on_log)
-    _log(f"开始导出: 输入={video_path} -> 输出={output_path} (格式 {fmt}, 彩色={use_color})")
     log(f"开始导出: 输入={video_path} -> 输出={output_path} (格式 {fmt}, 彩色={use_color})")
     try:
         cap = FrameReader(video_path, log=log, force_ffmpeg=True, hwaccel=hwaccel,
@@ -379,10 +369,17 @@ def export_video(video_path, output_path, target_w, target_h, target_fps,
         canvas_w, canvas_h, interval, est_total, on_progress, log,
         metadata=metadata, hwaccel=hwaccel, decode_args=decode_args,
         atlas=atlas, tile_w=tile_w, tile_h=tile_h,
-        char_to_idx=char_to_idx, ffmpeg_usage=ffmpeg_usage)
+        char_to_idx=char_to_idx, ffmpeg_usage=ffmpeg_usage, cancel=cancel)
     writer.release()
     if ok:
         _mux_audio(output_path, video_path, fmt, log)
+    elif msg.startswith("已取消"):
+        # 取消时删除可能已生成的半成品文件
+        if os.path.isfile(output_path):
+            try:
+                os.remove(output_path)
+            except Exception:
+                pass
     return _finish_export(ok, msg, on_done, elapsed=time.time() - t0)
 
 
@@ -475,8 +472,8 @@ def _export_single(video_path, writer, output_path, target_w, target_h, target_f
                    on_progress, log, metadata=None, hwaccel=True,
                    decode_args=None,
                    atlas=None, tile_w=None, tile_h=None, char_to_idx=None,
-                   ffmpeg_usage=None):
-    # 单线程单遍导出
+                   ffmpeg_usage=None, cancel=None):
+    # 单线程单遍导出；cancel 返回 True 时中断
     out_count = 0
     write_err = False
     src_no = -1
@@ -489,6 +486,8 @@ def _export_single(video_path, writer, output_path, target_w, target_h, target_f
         on_progress("render", 0, est_total or 0)
     try:
         while True:
+            if cancel and cancel():
+                break
             ret, frame = cap.read()
             if not ret:
                 break
@@ -513,6 +512,8 @@ def _export_single(video_path, writer, output_path, target_w, target_h, target_f
     finally:
         cap.release()
 
+    if cancel and cancel():
+        return False, "已取消导出"
     if out_count == 0:
         return False, "错误：导出未写入任何帧"
     if write_err:

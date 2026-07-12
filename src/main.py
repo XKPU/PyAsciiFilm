@@ -25,7 +25,6 @@ def do_play(video_path, use_color, with_audio=True):
         print(f"\n[错误] 播放过程中发生异常: {e}")
     finally:
         _log(f"播放结束: {video_path}")
-        print("\n已返回菜单")
 
 
 def main():
@@ -33,18 +32,11 @@ def main():
     from ui import MenuApp
 
     while True:
-        os.system("cls")
         result = MenuApp().run()
 
         if result == "quit" or result is None:
             _log("用户退出")
             return
-
-        if result == "reload":
-            from ui import reload_charset
-            _log("菜单：刷新配置文件")
-            reload_charset()
-            continue
 
         if isinstance(result, tuple) and result[0] == "play":
             _, use_color, video_path = result
@@ -53,10 +45,6 @@ def main():
                 continue
             _log(f"已选择视频: {video_path}")
             do_play(video_path, use_color=use_color, with_audio=True)
-            continue
-
-        if isinstance(result, tuple) and result[0] == "export":
-            # 导出界面由 MenuApp 内部 push，这里无需处理
             continue
 
         return

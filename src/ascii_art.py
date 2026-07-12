@@ -19,6 +19,10 @@ _DEFAULT_CONFIG = {
     "Charset": "ASCII_CHARS_10"
 }
 
+# 上次选择位置在配置文件中的键名
+LAST_VIDEO_DIR_KEY = "LastVideoDir"
+LAST_EXPORT_DIR_KEY = "LastExportDir"
+
 
 def _ensure_config():
     # 若 setting.json 不存在则用默认配置生成
@@ -45,7 +49,29 @@ def load_charset():
         return " .:-=+*#%@"
 
 
-# 从配置文件加载字符集
+def _read_config():
+    # 读取完整配置字典（失败返回空字典），并确保配置文件存在
+    _ensure_config()
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_config_value(key, value):
+    # 更新 setting.json 的单个顶层键并写回，保留其余配置
+    cfg = _read_config()
+    cfg[key] = value
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+# 从配置加载当前字符集（模块加载时执行一次）
 ASCII_CHARS = load_charset()
 
 
@@ -61,14 +87,6 @@ def make_lookup(chars):
 
 # 预生成默认 ASCII 字符查找表
 ASCII_LOOKUP = make_lookup(ASCII_CHARS)
-
-
-def _make_escaped_lookup(chars):
-    # 预生成 256 级灰度查找表（字符中的 '[' 已转义为 '\\['）
-    return np.array([chars[i * len(chars) // 256].replace("[", "\\[") for i in range(256)], dtype=object)
-
-
-ESCAPED_LOOKUP = _make_escaped_lookup(ASCII_CHARS)
 
 
 # 颜色量化级数（每通道位数）：2bit -> 4 级/通道，共 64 色
@@ -103,35 +121,31 @@ def _color_index(r, g, b):
     # 把 RGB 数组量化为 0..63 的颜色索引
     ri = (r >> _LEVEL_SHIFT) * (2 ** (2 * _COLOR_QBITS))
     gi = (g >> _LEVEL_SHIFT) * (2 ** _COLOR_QBITS)
-    bi = (g >> _LEVEL_SHIFT)
+    bi = (b >> _LEVEL_SHIFT)
     return ri + gi + bi
 
 
-def generate_colored_frame(pixels, luminance, charset=None):
+def generate_colored_frame(pixels, luminance):
     # 终端 ANSI 彩色字符画（用于裸终端播放）
-    lookup = _build_ansi_lookup(charset) if charset else ANSI_COLOR_LOOKUP
     ci = _color_index(pixels[..., 0], pixels[..., 1], pixels[..., 2])
-    ansi_grid = lookup[ci, luminance]
+    ansi_grid = ANSI_COLOR_LOOKUP[ci, luminance]
     lines = ["".join(row) + ANSI_RESET for row in ansi_grid]
     return "\n".join(lines)
 
 
-def generate_grayscale_frame(pixels, charset=None):
+def generate_grayscale_frame(pixels):
     # 灰度 ASCII 字符帧
     if len(pixels.shape) == 3 and pixels.shape[2] == 1:
         pixels = pixels.squeeze(axis=2)
-    chars = charset if charset else ASCII_CHARS
-    lookup = make_lookup(chars) if charset else ASCII_LOOKUP
-    chars_grid = lookup[pixels]
+    chars_grid = ASCII_LOOKUP[pixels]
     lines = ["".join(row) for row in chars_grid]
     return "\n".join(lines)
 
 
 def reload_charset():
     # 重新读取 setting.json，更新所有模块级查找表
-    global ASCII_CHARS, ASCII_LOOKUP, ESCAPED_LOOKUP, ANSI_COLOR_LOOKUP
+    global ASCII_CHARS, ASCII_LOOKUP, ANSI_COLOR_LOOKUP
     ASCII_CHARS = load_charset()
     ASCII_LOOKUP = make_lookup(ASCII_CHARS)
-    ESCAPED_LOOKUP = _make_escaped_lookup(ASCII_CHARS)
     ANSI_COLOR_LOOKUP = _build_ansi_lookup(ASCII_CHARS)
     return ASCII_CHARS

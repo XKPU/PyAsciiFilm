@@ -116,11 +116,6 @@ def _log_error(msg):
     _log(msg, level=logging.ERROR)
 
 
-def _log_warn(msg):
-    # 便捷：写入警告级日志
-    _log(msg, level=logging.WARNING)
-
-
 def _default_log(msg):
     # 默认日志：转发到真实终端 stderr
     try:
@@ -215,8 +210,7 @@ def _probe_hw_accel():
         return _HW_ACCEL
     ff = _ffmpeg_exe()
     if not ff:
-        _HW_ACCEL = {"decode": [], "encode_h264": [], "encode_hevc": [],
-                      "any_hw": False}
+        _HW_ACCEL = {"decode": [], "encode_h264": []}
         return _HW_ACCEL
 
     hwaccels = set()
@@ -234,13 +228,11 @@ def _probe_hw_accel():
         pass
     try:
         r = subprocess.run([ff, "-hide_banner", "-encoders"],
-                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                           text=True, timeout=5,
-                           creationflags=_CREATE_NO_WINDOW)
+                            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                            text=True, timeout=5,
+                            creationflags=_CREATE_NO_WINDOW)
         for line in (r.stdout or "").splitlines():
-            for name in ("h264_nvenc", "hevc_nvenc",
-                         "h264_qsv", "hevc_qsv",
-                         "h264_amf", "hevc_amf"):
+            for name in ("h264_nvenc", "h264_qsv", "h264_amf"):
                 if name in line:
                     listed_encoders.add(name)
     except Exception:
@@ -269,20 +261,7 @@ def _probe_hw_accel():
         if enc_name in listed_encoders and _validate_encoder(ff, enc_name, enc_params):
             encode_h264.append((enc_name, enc_params))
 
-    encode_hevc = []
-    _HEVC_CANDIDATES = [
-        ("hevc_nvenc", ["-preset", "p4", "-rc", "vbr", "-cq", "28",
-                         "-pix_fmt", "yuv420p"]),
-        ("hevc_qsv",   ["-pix_fmt", "yuv420p"]),
-        ("hevc_amf",   ["-pix_fmt", "yuv420p"]),
-    ]
-    for enc_name, enc_params in _HEVC_CANDIDATES:
-        if enc_name in listed_encoders and _validate_encoder(ff, enc_name, enc_params):
-            encode_hevc.append((enc_name, enc_params))
-
-    any_hw = bool(decode or encode_h264 or encode_hevc)
-    _HW_ACCEL = {"decode": decode, "encode_h264": encode_h264,
-                 "encode_hevc": encode_hevc, "any_hw": any_hw}
+    _HW_ACCEL = {"decode": decode, "encode_h264": encode_h264}
     return _HW_ACCEL
 
 
