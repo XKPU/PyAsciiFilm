@@ -1,8 +1,5 @@
 # 视频文件选择
 import os
-import subprocess
-import sys
-import traceback
 
 from textual.app import ComposeResult
 from textual.screen import Screen
@@ -13,6 +10,9 @@ from ascii_art import (
     _read_config, _write_config_value,
     LAST_VIDEO_DIR_KEY, LAST_EXPORT_DIR_KEY,
 )
+
+_VIDEO_EXTS = [".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm",
+               ".m4v", ".mpg", ".mpeg", ".ts", ".m2ts", ".vob"]
 
 
 def _load_last_dir(key):
@@ -32,19 +32,8 @@ def _save_last_dir(key, path):
         pass
 
 
-# 在独立子进程中弹出原生文件对话框的脚本。
-# 单独进程可避免 tkinter 与 textual 终端控制互相干扰，
-# 对话框作为独立 OS 窗口必然置顶弹出。
-_DIALOG_SCRIPT = r'''
-import os
-import sys
-from tkinter import Tk, filedialog
-
-VIDEO_EXTS = [".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm",
-              ".m4v", ".mpg", ".mpeg", ".ts", ".m2ts", ".vob"]
-
-
-def _split(initial):
+def _split_initial(initial):
+    # 拆分初始路径为目录与文件名
     initialdir = None
     initialfile = None
     if initial and os.path.isfile(initial):
@@ -55,71 +44,45 @@ def _split(initial):
     return initialdir, initialfile
 
 
-def main():
-    mode = sys.argv[1] if len(sys.argv) > 1 else "open"
-    initial = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] else ""
-    def_ext = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else ""
-    default_dir = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else ""
-
+def _run_dialog(mode, initial=None, def_ext=None, default_dir=None):
+    # 弹出 tkinter 原生对话框，返回所选路径或 None（取消/失败）
+    from tkinter import Tk, filedialog
     root = Tk()
     root.withdraw()
     root.attributes("-topmost", True)
     root.update()
-
-    initialdir, initialfile = _split(initial)
-    if not initialdir and default_dir and os.path.isdir(default_dir):
-        initialdir = default_dir
-
-    if mode == "save":
-        se = def_ext if def_ext.startswith(".") else ("." + def_ext if def_ext else ".mp4")
-        filetypes = [("视频文件", "*" + se), ("所有文件", "*.*")]
-        path = filedialog.asksaveasfilename(
-            title="选择导出文件路径",
-            initialdir=initialdir or os.getcwd(),
-            initialfile=initialfile or "",
-            defaultextension=se,
-            filetypes=filetypes,
-        )
-    else:
-        ext_pat = " ".join("*" + e for e in VIDEO_EXTS)
-        filetypes = [("视频文件", ext_pat), ("所有文件", "*.*")]
-        path = filedialog.askopenfilename(
-            title="请选择视频",
-            initialdir=initialdir or os.getcwd(),
-            initialfile=initialfile or "",
-            filetypes=filetypes,
-        )
-
-    print(path or "", end="")
-    root.destroy()
-
-
-main()
-'''
-
-
-def _run_dialog(mode, initial=None, def_ext=None, default_dir=None):
-    # 在子进程中弹出原生对话框，返回所选路径或 None（取消/失败）
-    args = [sys.executable, "-c", _DIALOG_SCRIPT, mode]
-    args.append(initial or "")
-    args.append(def_ext or "")
-    args.append(default_dir or "")
     try:
-        proc = subprocess.run(
-            args,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        out = (proc.stdout or "").strip()
-        if proc.returncode != 0 or not out:
-            if proc.stderr and proc.stderr.strip():
-                _log_error(f"对话框子进程错误: {proc.stderr.strip()}")
-            return None
-        return out
+        initialdir, initialfile = _split_initial(initial)
+        if not initialdir and default_dir and os.path.isdir(default_dir):
+            initialdir = default_dir
+        if mode == "save":
+            se = def_ext if def_ext.startswith(".") else ("." + def_ext if def_ext else ".mp4")
+            filetypes = [("视频文件", "*" + se), ("所有文件", "*.*")]
+            path = filedialog.asksaveasfilename(
+                title="选择导出文件路径",
+                initialdir=initialdir or os.getcwd(),
+                initialfile=initialfile or "",
+                defaultextension=se,
+                filetypes=filetypes,
+            )
+        else:
+            ext_pat = " ".join("*" + e for e in _VIDEO_EXTS)
+            filetypes = [("视频文件", ext_pat), ("所有文件", "*.*")]
+            path = filedialog.askopenfilename(
+                title="请选择视频",
+                initialdir=initialdir or os.getcwd(),
+                initialfile=initialfile or "",
+                filetypes=filetypes,
+            )
+        return path or None
     except Exception as e:
-        _log_error(f"对话框子进程异常 {e}\n{traceback.format_exc()}")
+        _log_error(f"对话框异常: {e}")
         return None
+    finally:
+        try:
+            root.destroy()
+        except Exception:
+            pass
 
 
 def select_video_path(initial=None):
