@@ -4,5 +4,6 @@ pillow == 10.4.0
 imageio-ffmpeg
 textual == 3.1.0
 sounddevice
+
 nuitka
 zstandard
