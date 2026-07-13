@@ -12,6 +12,6 @@
     --lto=yes ^
     --windows-company-name=K_PU ^
     --windows-product-name=PyAsciiFilm ^
-    --windows-file-version=3.0 ^
-    --windows-product-version=3.0 ^
+    --windows-file-version=3.0.2 ^
+    --windows-product-version=3.0.2 ^
     .\src\main.py
