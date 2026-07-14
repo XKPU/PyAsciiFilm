@@ -4,14 +4,12 @@ import sys
 import threading
 import traceback
 
-from utils import _probe_hw_accel, _clear_log, _log, _log_error, _app_dir
+from utils import _clear_log, _log, _log_error, _app_dir
 
-# 清空并初始化日志
+# 清空并初始化日志文件
 _clear_log()
 _LOG_FILE = os.path.join(_app_dir(), "pyasciifilm.log")
 _log(f"==== PyAsciiFilm 启动 ==== | Python {sys.version.split()[0]} | 平台 {sys.platform}")
-
-threading.Thread(target=_probe_hw_accel, daemon=True).start()
 
 
 def do_play(video_path, use_color, with_audio=True):

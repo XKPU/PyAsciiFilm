@@ -1,4 +1,5 @@
 # ASCII 帧生成与终端播放
+import os
 import sys
 import time
 import shutil
@@ -58,7 +59,7 @@ class _KeyReader:
         self._posix = self._setup_posix() if self._msvcrt is None else None
 
     def _setup_posix(self):
-        # 类 Unix 非阻塞键盘读取（需真实终端）
+        # 类 Unix：播放期间保持 cbreak（逐键即时送达、无回显，保留 Ctrl+C）
         import sys
         if not sys.stdin.isatty():
             return None
@@ -67,6 +68,7 @@ class _KeyReader:
             import tty
             fd = sys.stdin.fileno()
             old = termios.tcgetattr(fd)
+            tty.setcbreak(fd)
             return fd, old
         except Exception:
             return None
@@ -82,26 +84,27 @@ class _KeyReader:
         if not self._posix:
             return False
         import select
-        import sys
-        import termios
-        import tty
-        fd, old = self._posix
+        fd, _old = self._posix
         try:
-            tty.setraw(fd)
             r, _, _ = select.select([fd], [], [], 0)
-            pressed = False
-            if r:
-                ch = sys.stdin.read(1)
-                if ch in ("q", "Q", "\x1b"):
-                    pressed = True
-            return pressed
+            if not r:
+                return False
+            ch = os.read(fd, 1)
+            return ch in (b"q", b"Q", b"\x1b")
         except Exception:
             return False
-        finally:
-            try:
-                termios.tcsetattr(fd, termios.TCSADRAIN, old)
-            except Exception:
-                pass
+
+    def close(self):
+        # 播放结束恢复终端原始模式
+        if not self._posix:
+            return
+        import termios
+        fd, old = self._posix
+        try:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        except Exception:
+            pass
+        self._posix = None
 
 
 def _get_terminal_size():
@@ -235,6 +238,7 @@ def play_video(video_path, use_color=False, with_audio=True):
         pass
     finally:
         cap.release()
+        keys.close()
         if stop_audio:
             stop_audio()
         out.write("\033[0m\033[?25h\033[2J\033[H")

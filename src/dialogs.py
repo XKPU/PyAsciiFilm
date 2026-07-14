@@ -14,7 +14,7 @@ from ascii_art import (
 
 
 def _gui_available():
-    # 是否可用图形文件对话框（tkinter + 显示服务），否则回退文本输入
+    # 图形对话框是否可用（tkinter + 显示服务），否则回退文本输入
     if os.environ.get("PYASCIIFILM_NO_GUI"):
         return False
     if sys.platform == "win32":
@@ -34,6 +34,30 @@ def _gui_available():
 
 _VIDEO_EXTS = [".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm",
                ".m4v", ".mpg", ".mpeg", ".ts", ".m2ts", ".vob"]
+
+
+# 复用的 Tk 根窗口（避免反复初始化 Tcl/Tk）
+_TK_ROOT = None
+
+
+def _tk_root():
+    # 懒初始化并复用 Tk 根；失败则标记 False 不再重试
+    global _TK_ROOT
+    if _TK_ROOT is not None:
+        return _TK_ROOT or None
+    try:
+        from tkinter import Tk
+        root = Tk()
+        root.withdraw()
+        try:
+            root.attributes("-topmost", True)
+        except Exception:
+            pass
+        _TK_ROOT = root
+    except Exception as e:
+        _log_error(f"无法初始化图形对话框（已回退文本输入）: {e}")
+        _TK_ROOT = False
+    return _TK_ROOT or None
 
 
 def _load_last_dir(key):
@@ -66,17 +90,12 @@ def _split_initial(initial):
 
 
 def _run_dialog(mode, initial=None, def_ext=None, default_dir=None):
-    # 弹原生对话框，返回路径或 None
+    # 弹出 tkinter 原生对话框，返回所选路径或 None（取消/失败）
     if not _gui_available():
         return None
-    from tkinter import Tk, filedialog
-    try:
-        root = Tk()
-        root.withdraw()
-        root.attributes("-topmost", True)
-        root.update()
-    except Exception as e:
-        _log_error(f"无法初始化图形对话框（已回退文本输入）: {e}")
+    from tkinter import filedialog
+    root = _tk_root()
+    if root is None:
         return None
     try:
         initialdir, initialfile = _split_initial(initial)
@@ -105,11 +124,6 @@ def _run_dialog(mode, initial=None, def_ext=None, default_dir=None):
     except Exception as e:
         _log_error(f"对话框异常: {e}")
         return None
-    finally:
-        try:
-            root.destroy()
-        except Exception:
-            pass
 
 
 def select_video_path(initial=None):
@@ -165,7 +179,7 @@ class SelectingScreen(Screen):
         if self._use_text:
             self.query_one("#path", Input).focus()
         else:
-            self.set_timer(0.25, self._pick)
+            self.call_after_refresh(self._pick)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if not self._use_text:

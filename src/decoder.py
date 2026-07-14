@@ -13,6 +13,32 @@ from utils import (
 
 
 # 视频帧读取器：cv2 优先，失败回退 ffmpeg 管道
+
+_FPS_FLAG = None
+
+
+def _fps_flag():
+    # 帧率直通参数：新版用 -fps_mode passthrough，旧版（<5.0）回退 -vsync 0
+    global _FPS_FLAG
+    if _FPS_FLAG is not None:
+        return _FPS_FLAG
+    flag = ["-vsync", "0"]
+    ff = _ffmpeg_exe()
+    if ff:
+        try:
+            r = subprocess.run(
+                [ff, "-fps_mode", "passthrough", "-h"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                text=True, creationflags=_CREATE_NO_WINDOW,
+            )
+            if "Unrecognized option 'fps_mode'" not in (r.stderr or ""):
+                flag = ["-fps_mode", "passthrough"]
+        except Exception:
+            pass
+    _FPS_FLAG = flag
+    return flag
+
+
 class FrameReader:
 
     def __init__(self, video_path, log=None, force_ffmpeg=False, force_size=None,
@@ -123,7 +149,7 @@ class FrameReader:
                 cmd += list(decode_args)
             if seek_seconds > 0:
                 cmd += ["-ss", f"{seek_seconds:.3f}"]
-            cmd += ["-i", self.path, "-fps_mode", "passthrough"]
+            cmd += ["-i", self.path] + _fps_flag()
             if self._scale_w > 0 and self._scale_h > 0:
                 cmd += ["-vf", f"scale={self._scale_w}:{self._scale_h}"]
             cmd += ["-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
