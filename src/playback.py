@@ -18,7 +18,7 @@ from utils import _log, _log_error
 # 帧 -> 字符画
 # ---------------------------------------------------------------------------
 def _frame_to_terminal_text(frame, width, use_color):
-    # 帧转换为终端文本
+    # 帧 -> 终端文本
     aspect = frame.shape[0] / frame.shape[1]
     new_height = max(1, int(aspect * width * 0.5))
     resized_bgr = cv2.resize(frame, (width, new_height))
@@ -34,7 +34,7 @@ def _frame_to_terminal_text(frame, width, use_color):
 # 原始终端播放
 # ---------------------------------------------------------------------------
 def _enable_windows_ansi():
-    # 在 Windows 控制台启用 ANSI 转义序列处理
+    # Windows 控制台启用 ANSI 转义序列
     try:
         import ctypes
         kernel32 = ctypes.windll.kernel32
@@ -55,16 +55,53 @@ class _KeyReader:
             self._msvcrt = msvcrt
         except ImportError:
             self._msvcrt = None
+        self._posix = self._setup_posix() if self._msvcrt is None else None
+
+    def _setup_posix(self):
+        # 类 Unix 非阻塞键盘读取（需真实终端）
+        import sys
+        if not sys.stdin.isatty():
+            return None
+        try:
+            import termios
+            import tty
+            fd = sys.stdin.fileno()
+            old = termios.tcgetattr(fd)
+            return fd, old
+        except Exception:
+            return None
 
     def quit_pressed(self):
-        if not self._msvcrt:
+        if self._msvcrt is not None:
+            pressed = False
+            while self._msvcrt.kbhit():
+                ch = self._msvcrt.getch()
+                if ch in (b"q", b"Q", b"\x1b"):
+                    pressed = True
+            return pressed
+        if not self._posix:
             return False
-        pressed = False
-        while self._msvcrt.kbhit():
-            ch = self._msvcrt.getch()
-            if ch in (b"q", b"Q", b"\x1b"):
-                pressed = True
-        return pressed
+        import select
+        import sys
+        import termios
+        import tty
+        fd, old = self._posix
+        try:
+            tty.setraw(fd)
+            r, _, _ = select.select([fd], [], [], 0)
+            pressed = False
+            if r:
+                ch = sys.stdin.read(1)
+                if ch in ("q", "Q", "\x1b"):
+                    pressed = True
+            return pressed
+        except Exception:
+            return False
+        finally:
+            try:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old)
+            except Exception:
+                pass
 
 
 def _get_terminal_size():
@@ -74,7 +111,7 @@ def _get_terminal_size():
 
 
 def _calculate_optimal_width(term_width, term_height, video_width, video_height):
-    # 计算最佳字符画宽度
+    # 最佳字符画宽度
     max_ascii_width = min(term_width - 1, video_width)
     max_ascii_height = min(term_height - 1, video_height)
 
@@ -101,7 +138,7 @@ def _create_progress_bar(current, total, width=50):
 
 
 def play_video(video_path, use_color=False, with_audio=True):
-    # 在原始终端用 ANSI 直接播放视频
+    # 原始终端 ANSI 播放视频
     _enable_windows_ansi()
     _log(f"播放初始化: {video_path} | 彩色={use_color} 音频={with_audio}")
     out = sys.stdout
@@ -202,7 +239,7 @@ def play_video(video_path, use_color=False, with_audio=True):
             stop_audio()
         out.write("\033[0m\033[?25h\033[2J\033[H")
         out.flush()
-        # 播放结束、屏幕已清空，打印缓冲日志
+        # 播放结束后打印缓冲日志
         if _playback_logs:
             try:
                 sys.stderr.write("\n----- 播放日志 -----\n")

@@ -1,9 +1,15 @@
+# UI
+textual == 3.1.0
+
+# 视频
 numpy
 opencv-python
-pillow == 10.4.0
 imageio-ffmpeg
-textual == 3.1.0
-sounddevice
+pillow == 10.4.0
 
+# 音频
+miniaudio
+
+# 构建
 nuitka
 zstandard

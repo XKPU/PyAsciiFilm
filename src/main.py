@@ -6,7 +6,7 @@ import traceback
 
 from utils import _probe_hw_accel, _clear_log, _log, _log_error, _app_dir
 
-# 清空并初始化日志文件
+# 清空并初始化日志
 _clear_log()
 _LOG_FILE = os.path.join(_app_dir(), "pyasciifilm.log")
 _log(f"==== PyAsciiFilm 启动 ==== | Python {sys.version.split()[0]} | 平台 {sys.platform}")
@@ -28,7 +28,7 @@ def do_play(video_path, use_color, with_audio=True):
 
 
 def main():
-    # 程序入口
+    # 主循环
     from ui import MenuApp
 
     while True:
@@ -54,7 +54,7 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        # 捕获致命异常写入日志与控制台，避免“无任何信息直接退出”
+        # 致命异常写日志与控制台
         _log_error(f"致命异常: {e}\n{traceback.format_exc()}")
         print(f"[致命错误] {e}\n详见日志: {_LOG_FILE}", file=sys.stderr)
         traceback.print_exc()

@@ -1,3 +1,6 @@
+@echo off
+set VERSION=3.0.2
+
 .\.venv\Scripts\python.exe -m nuitka ^
     --onefile ^
     --standalone ^
@@ -5,13 +8,13 @@
     --enable-plugin=tk-inter ^
     --include-package=textual ^
     --include-package=rich._unicode_data ^
-    --include-module=sounddevice ^
     --include-package=imageio_ffmpeg ^
-    --output-filename=PyAsciiFilm.exe ^
-    --output-dir=build ^
+    --include-module=miniaudio ^
+    --output-filename=PyAsciiFilm-%VERSION%-windows_x64.exe ^
+    --output-dir=build\windows_x64 ^
     --lto=yes ^
     --windows-company-name=K_PU ^
     --windows-product-name=PyAsciiFilm ^
-    --windows-file-version=3.0.2 ^
-    --windows-product-version=3.0.2 ^
+    --windows-file-version=%VERSION% ^
+    --windows-product-version=%VERSION% ^
     .\src\main.py

@@ -11,7 +11,7 @@ from textual.containers import Vertical, Horizontal, ScrollableContainer
 
 from utils import _list_verified_decode_backends, _log
 from ascii_art import reload_charset, ASCII_CHARS
-from dialogs import SelectingScreen, select_output_path
+from dialogs import SelectingScreen, select_output_path, _gui_available
 
 
 _EXPORTER = None
@@ -31,7 +31,6 @@ def _exporter():
 # ---------------------------------------------------------------------------
 
 class MenuApp(App):
-    # 主菜单界面
 
     CSS = """
     Screen { align: center middle; }
@@ -42,12 +41,12 @@ class MenuApp(App):
     BINDINGS = [("q", "quit", "退出")]
 
     def on_mount(self) -> None:
-        # 挂载时设置窗口标题并聚焦列表
+        # 设标题并聚焦列表
         self.title = "PyAsciiFilm"
         self.query_one(ListView).focus()
 
     def compose(self) -> ComposeResult:
-        # 构建主菜单列表
+        # 主菜单列表
         yield Header()
         yield ListView(
             ListItem(Label("导出为视频"), id="export"),
@@ -59,7 +58,7 @@ class MenuApp(App):
         yield Footer()
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
-        # 处理菜单项选择
+        # 菜单项选择
         if event.item.id == "export":
             _log("菜单：选择导出为视频")
             self.push_screen(SelectingScreen(
@@ -73,13 +72,16 @@ class MenuApp(App):
         elif event.item.id == "reload_config":
             chars = reload_charset()
             _log("菜单：刷新配置文件")
-            self.notify(f"配置已刷新，字符集已重新加载：{chars}")
+            self.notify(
+                f"配置已刷新，字符集已重新加载：{chars}",
+                markup=False,
+            )
         else:
             _log("菜单：退出")
             self.app.exit(result="quit")
 
     def _after_export_pick(self, path):
-        # 导出前先选片：未选择则报错并返回主菜单，否则进入设置面板
+        # 选片后：无则回菜单，有则进入设置面板
         self.pop_screen()
         if path:
             self.push_screen(ExportSettingsScreen(video_path=path))
@@ -91,7 +93,7 @@ class MenuApp(App):
             initial=None, on_done=lambda p: self._after_pick_play(p, color)))
 
     def _after_pick_play(self, path, color):
-        # 选片结束后返回菜单或进入播放
+        # 选片后回菜单或进入播放
         self.pop_screen()
         if path:
             self.app.exit(result=("play", color, path))
@@ -102,7 +104,6 @@ class MenuApp(App):
 # ---------------------------------------------------------------------------
 
 class ExportSettingsScreen(Screen):
-    # 导出设置面板
 
     BINDINGS = [("escape", "back_to_menu", "返回主菜单")]
 
@@ -150,24 +151,28 @@ class ExportSettingsScreen(Screen):
         self._decode_backends = None
 
     def _select_video(self):
-        # 在 Textual 内提示“请选择视频”，随后弹出 tkinter 原生对话框选片
+        # 提示后弹原生对话框选片
         self.app.push_screen(SelectingScreen(
             initial=self.video_path, on_done=self._on_video_picked))
 
     def _select_output(self):
-        # 弹出 tkinter 保存对话框选择导出输出路径
+        # 弹保存对话框选输出路径
+        if not _gui_available():
+            self.notify("当前环境无图形界面，请直接在输出路径框中输入路径",
+                        severity="warning")
+            return
         path = select_output_path(self.out_path, self.fmt)
         if path:
             self._set_out_path(path)
 
     def _on_video_picked(self, path):
-        # 文件浏览器回调：选定后刷新界面并关闭浏览器，取消则仅关闭浏览器
+        # 选片回调：有则刷新界面，最后关闭浏览器
         if path:
             self._set_video(path)
         self.app.pop_screen()
 
     def _set_video(self, video_path):
-        # 设置视频并刷新源信息、推荐尺寸与输出路径
+        # 设视频并刷新源信息、推荐尺寸、输出路径
         self.video_path = video_path
         self.src_w, self.src_h, self.src_fps = _probe_video(video_path)
         self.rec_w, self.rec_h = self._recommended_char_size()
@@ -195,14 +200,14 @@ class ExportSettingsScreen(Screen):
             pass
 
     def _char_h_for_w(self, char_w):
-        # 根据字符宽度和原视频比例计算对应的字符高度
+        # 按原视频比例算字符高度
         if self.src_w <= 0 or self.src_h <= 0:
             return max(1, round(char_w * 3 / 4))
         h = char_w * (self.src_h / self.src_w) * (self.cell_w / self.cell_h)
         return max(1, round(h))
 
     def _canvas_bytes(self, char_w, char_h):
-        # 计算给定字符网格对应的画布像素尺寸和单帧字节大小
+        # 字符网格 -> 画布像素尺寸与单帧字节数
         import math
         cw = int(math.ceil(char_w * self.cell_w))
         ch = int(math.ceil(char_h * self.cell_h))
@@ -211,7 +216,7 @@ class ExportSettingsScreen(Screen):
         return cw * ch * 3, cw, ch
 
     def _recommended_char_size(self):
-        # 根据视频分辨率和字体尺寸计算推荐的字符网格宽高
+        # 按分辨率与字体算推荐字符网格宽高
         if self.src_w <= 0 or self.src_h <= 0:
             return 160, 120
         char_w = min(self._MAX_REC_CHAR_W, max(1, round(self.src_w / self.cell_w)))
@@ -225,7 +230,7 @@ class ExportSettingsScreen(Screen):
         return char_w, char_h
 
     def _size_hint_text(self, char_w=None, char_h=None):
-        # 生成画布尺寸提示文案
+        # 画布尺寸提示文案
         _, rcw, rch = self._canvas_bytes(self.rec_w, self.rec_h)
         base = (f"宽/高为字符数，推荐 {self.rec_w}x{self.rec_h} "
                 f"字符（对应画布 {rcw}x{rch}px ≈ 原视频比例）")
@@ -237,7 +242,7 @@ class ExportSettingsScreen(Screen):
         return base
 
     def _refresh_size_hint(self):
-        # 读取当前宽高输入框的值，更新画布尺寸提示文案与硬件编码警告
+        # 刷新画布尺寸提示与硬件编码警告
         w = self._safe_int(self.query_one("#w", Input).value)
         h = self._safe_int(self.query_one("#h", Input).value)
         self.query_one("#sizhint", Static).update(self._size_hint_text(w, h))
@@ -252,7 +257,7 @@ class ExportSettingsScreen(Screen):
         self.query_one("#warn", Static).update(warn)
 
     def compose(self) -> ComposeResult:
-        # 构建导出设置面板布局
+        # 导出设置面板布局
         yield Header()
         yield ScrollableContainer(
             Vertical(
@@ -289,7 +294,7 @@ class ExportSettingsScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
-        # 进入设置前视频已在菜单选好；未选（理论上不会）则退回选片
+        # 视频通常已在菜单选好；未选则退回选片
         if self.video_path:
             self._set_video(self.video_path)
         else:
@@ -297,16 +302,16 @@ class ExportSettingsScreen(Screen):
         self.run_worker(self._init_hw_accel, thread=True)
 
     def action_back_to_menu(self):
-        # Esc 快捷键：放弃设置直接返回主菜单
+        # Esc：返回主菜单
         self.app.pop_screen()
 
     def _init_hw_accel(self):
-        # 后台线程：探测所有经验证可用的解码后端
+        # 后台线程：探测可用解码后端
         self._decode_backends = _list_verified_decode_backends()
         self.app.call_from_thread(self._apply_hw_accel)
 
     def _apply_hw_accel(self):
-        # 主线程回调：用探测结果填充解码模式下拉框
+        # 主线程回调：填充解码模式下拉框
         sel = self.query_one("#decode_mode", Select)
         options = [(label, i) for i, (label, _) in enumerate(self._decode_backends)]
         sel.set_options(options)
@@ -323,7 +328,7 @@ class ExportSettingsScreen(Screen):
     # ---- 宽高比例锁定 ----
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        # 输入框内容变化时按比例同步宽高
+        # 输入变化时按比例同步宽高
         if event.input.id == "w":
             self._sync_from_width()
         elif event.input.id == "h":
@@ -332,14 +337,14 @@ class ExportSettingsScreen(Screen):
             self._refresh_size_hint()
 
     def _safe_int(self, val):
-        # 安全转换字符串为 int
+        # 字符串转 int，失败返回 None
         try:
             return int(val)
         except ValueError:
             return None
 
     def _sync_from_width(self):
-        # 根据当前宽度值按比例同步更新高度值
+        # 按宽度比例同步高度
         if not self.lock_ratio:
             return
         if self._expect_w is not None:
@@ -355,7 +360,7 @@ class ExportSettingsScreen(Screen):
             h_input.value = str(new_h)
 
     def _sync_from_height(self):
-        # 根据当前高度值按比例同步更新宽度值
+        # 按高度比例同步宽度
         if not self.lock_ratio:
             return
         if self._expect_h is not None:
@@ -374,14 +379,14 @@ class ExportSettingsScreen(Screen):
             w_input.value = str(new_w)
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
-        # 比例锁定复选框切换时更新锁定状态
+        # 比例锁定切换
         if event.checkbox.id == "lock":
             self.lock_ratio = event.value
             if self.lock_ratio:
                 self._sync_from_width()
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        # 输出格式切换时更新输出路径的文件扩展名
+        # 格式切换时更新输出扩展名
         if event.select.id == "fmt" and event.value:
             self.fmt = event.value
             base, _ = os.path.splitext(self.out_path)
@@ -391,7 +396,7 @@ class ExportSettingsScreen(Screen):
     # ---- 帧率步进调整 ----
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        # 处理所有按钮点击事件
+        # 按钮点击分发
         bid = event.button.id
         if bid == "fps_up":
             self._step_fps(1)
@@ -408,7 +413,7 @@ class ExportSettingsScreen(Screen):
         if bid != "ok":
             return
 
-        # ---- 校验导出参数 ----
+        # 校验导出参数
         if not self.video_path:
             self.query_one("#err", Static).update("请先选择视频文件")
             return
@@ -437,7 +442,7 @@ class ExportSettingsScreen(Screen):
             self.query_one("#err", Static).update("请填写输出文件路径")
             return
 
-        # ---- 组装导出参数并跳转进度界面 ----
+        # 组装参数并跳转进度界面
         color = self.query_one("#color", Checkbox).value
         sel_val = self.query_one("#decode_mode", Select).value
         if self._decode_backends and isinstance(sel_val, int) and sel_val < len(self._decode_backends):
@@ -457,7 +462,7 @@ class ExportSettingsScreen(Screen):
         }))
 
     def _step_fps(self, delta):
-        # 帧率步进调整 ±1
+        # 帧率步进 ±1
         try:
             fps = float(self.query_one("#fps", Input).value)
         except ValueError:
@@ -466,7 +471,7 @@ class ExportSettingsScreen(Screen):
         self.query_one("#fps", Input).value = str(int(round(fps)))
 
     def _set_out_path(self, val):
-        # 设置输出路径
+        # 设输出路径（套用当前格式扩展名）
         base, _ = os.path.splitext(val)
         self.out_path = base + "." + self.fmt
         self.query_one("#out_disp", Input).value = self.out_path
@@ -477,7 +482,6 @@ class ExportSettingsScreen(Screen):
 # ---------------------------------------------------------------------------
 
 class ExportProgressScreen(Screen):
-    # 导出进度界面
 
     BINDINGS = [("escape", "back_to_menu", "返回主菜单")]
 
@@ -497,7 +501,7 @@ class ExportProgressScreen(Screen):
         self._cancel = threading.Event()
 
     def compose(self) -> ComposeResult:
-        # 构建布局
+        # 进度界面布局
         yield Vertical(
             Static("正在导出视频…", id="title"),
             ProgressBar(id="bar", total=100),
@@ -509,16 +513,16 @@ class ExportProgressScreen(Screen):
         )
 
     def on_mount(self) -> None:
-        # 挂载即启动后台导出线程；返回按钮始终可用，用于中断导出
+        # 启动后台导出线程；返回按钮可随时中断
         threading.Thread(target=self._worker, daemon=True).start()
 
     def _request_exit(self):
-        # 中断导出并清理相关进程后返回主菜单
+        # 中断导出并返回主菜单
         self._cancel.set()
         self.app.pop_screen()
 
     def _worker(self):
-        # 后台线程：调用 export_video 执行实际导出
+        # 后台线程：调用 export_video
         out_base = os.path.splitext(self.params["out"])[0] + "." + self.params["fmt"]
 
         def prog(stage, done, total):
@@ -570,12 +574,12 @@ class ExportProgressScreen(Screen):
             )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        # 返回按钮：中断导出并返回主菜单
+        # 返回按钮：中断导出
         if event.button.id == "back":
             self._request_exit()
 
     def action_back_to_menu(self):
-        # Esc 快捷键：随时中断导出并返回主菜单
+        # Esc：中断导出并返回主菜单
         self._request_exit()
 
 
@@ -584,7 +588,7 @@ class ExportProgressScreen(Screen):
 # ---------------------------------------------------------------------------
 
 def _probe_video(path):
-    # 探测视频文件的宽、高、帧率
+    # 探测视频宽、高、帧率
     from decoder import FrameReader
     cap = FrameReader(path, log=lambda msg: None)
     w, h, fps = cap.width, cap.height, cap.fps

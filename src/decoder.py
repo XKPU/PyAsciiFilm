@@ -152,7 +152,7 @@ class FrameReader:
         self._frame_bytes = w * h * 3
 
     def _probe_with_ffmpeg(self, ff):
-        # 用 ffmpeg 探测视频元信息
+        # ffmpeg 探测视频元信息
         try:
             res = subprocess.run(
                 [ff, "-hide_banner", "-i", self.path],

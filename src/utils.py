@@ -7,12 +7,12 @@ import sys
 import threading
 
 
-# Windows 下隐藏子进程（ffmpeg 等）弹出的控制台窗口
-_CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW
+# Windows 隐藏子进程控制台窗口；非 Windows 用 0（creationflags 被忽略）
+_CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def _cpu_count():
-    # 返回逻辑 CPU 核心数（至少为 1）
+    # 逻辑 CPU 核心数（≥1）
     try:
         n = os.cpu_count() or 1
     except Exception:
@@ -20,12 +20,12 @@ def _cpu_count():
     return max(1, n)
 
 
-# ffmpeg 最高占用（两个 ffmpeg 进程合计的核心占用百分比），默认 35%
+# ffmpeg 合计核心占用上限（两进程），默认 35%
 _FFMPEG_MAX_USAGE = 35
 
 
 def _set_ffmpeg_max_usage(pct):
-    # 设置 ffmpeg 合计最高占用百分比（1~100）
+    # 设 ffmpeg 合计占用上限（1~100）
     global _FFMPEG_MAX_USAGE
     try:
         p = int(pct)
@@ -35,7 +35,7 @@ def _set_ffmpeg_max_usage(pct):
 
 
 def _ffmpeg_usage_threads(usage=None):
-    # 由合计占用百分比换算成两个 ffmpeg 的总线程数（向上取整）
+    # 合计占用 -> 两进程总线程数（向上取整）
     pct = usage if usage is not None else _FFMPEG_MAX_USAGE
     try:
         pct = max(1, min(100, int(pct)))
@@ -45,24 +45,24 @@ def _ffmpeg_usage_threads(usage=None):
 
 
 def _encode_threads(usage=None):
-    # 编码进程线程数：占合计预算的 75%（至少 1）
+    # 编码线程数：合计的 75%（≥1）
     return max(1, int(round(_ffmpeg_usage_threads(usage) * 0.75)))
 
 
 def _decode_threads(usage=None):
-    # 解码进程线程数：占合计预算的剩余部分（至少 1）
+    # 解码线程数：合计剩余（≥1）
     return max(1, _ffmpeg_usage_threads(usage) - _encode_threads(usage) + 1)
 
 
 def _app_dir():
-    # 程序所在目录：打包后用 exe 同目录；源码运行用启动时的当前工作目录
+    # 程序目录：打包用 exe 同目录，源码用启动 CWD
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
     return os.getcwd()
 
 
 # ---------------------------------------------------------------------------
-# 持久日志文件（位于程序所在目录，与 setting.json 同目录，启动即清空）
+# 持久日志文件（程序目录，启动即清空）
 # ---------------------------------------------------------------------------
 _LOG_PATH = os.path.join(_app_dir(), "pyasciifilm.log")
 _LOG_LOCK = threading.Lock()
@@ -70,7 +70,7 @@ _LOGGER = None
 
 
 def _init_logger():
-    # 惰性配置全局 logger（仅写文件，线程安全）
+    # 惰性配置全局 logger（仅写文件）
     global _LOGGER
     if _LOGGER is not None:
         return _LOGGER
@@ -92,7 +92,7 @@ def _init_logger():
 
 
 def _clear_log():
-    # 程序启动时清空日志文件
+    # 启动时清空日志
     try:
         with open(_LOG_PATH, "w", encoding="utf-8") as f:
             f.write("")
@@ -101,7 +101,7 @@ def _clear_log():
 
 
 def _log(msg, level=logging.INFO):
-    # 写入一行日志到持久文件（全模块共用）
+    # 写一行日志
     if not isinstance(msg, str):
         msg = str(msg)
     try:
@@ -112,12 +112,12 @@ def _log(msg, level=logging.INFO):
 
 
 def _log_error(msg):
-    # 便捷：写入错误级日志
+    # 错误级日志
     _log(msg, level=logging.ERROR)
 
 
 def _default_log(msg):
-    # 默认日志：转发到真实终端 stderr
+    # 默认日志：转发 stderr
     try:
         print(msg, file=sys.stderr)
     except Exception:
@@ -125,7 +125,7 @@ def _default_log(msg):
 
 
 def clean_fps(fps):
-    # 把 cv2 探测到的帧率收拢为名义整数帧率
+    # 帧率收拢为名义整数
     if fps is None or fps <= 0:
         return 30.0
     r = round(fps)
@@ -157,7 +157,7 @@ def _ffmpeg_exe():
 # 子进程 stderr 转发
 # ---------------------------------------------------------------------------
 def _forward_stderr(proc, log):
-    # 后台线程逐行读取子进程 stderr 并转发给 log(line)
+    # 后台逐行转发子进程 stderr 给 log
     if getattr(proc, "stderr", None) is None:
         return
 
@@ -187,7 +187,7 @@ _HW_ACCEL = None
 
 
 def _validate_encoder(ff, encoder, extra_args, w=160, h=120):
-    # 用 1 帧 160x120 yuv420p 实际编码验证编码器是否可用
+    # 编码 1 帧验证编码器可用性
     cmd = [ff, "-y", "-hide_banner", "-loglevel", "error",
            "-f", "rawvideo", "-pix_fmt", "yuv420p",
            "-s", f"{w}x{h}", "-r", "24", "-i", "-",
@@ -204,7 +204,7 @@ def _validate_encoder(ff, encoder, extra_args, w=160, h=120):
 
 
 def _probe_hw_accel():
-    # 探测随包 ffmpeg 可用的硬件加速后端，返回结构化字典（缓存）
+    # 探测可用硬件加速后端（缓存）
     global _HW_ACCEL
     if _HW_ACCEL is not None:
         return _HW_ACCEL
@@ -269,7 +269,7 @@ def _probe_hw_accel():
 # 解码后端运行时验证
 # ---------------------------------------------------------------------------
 def _verify_decode_backend(decode_args):
-    # 用 1 帧测试视频验证指定解码后端是否真正可用
+    # 解码 1 帧测试视频验证解码后端可用性
     if not decode_args:
         return True
     ff = _ffmpeg_exe()
@@ -310,7 +310,7 @@ def _verify_decode_backend(decode_args):
 
 
 def _list_verified_decode_backends():
-    # 返回所有经运行时验证可用的解码后端列表
+    # 经验证可用的解码后端列表
     hw = _probe_hw_accel()
     result = []
     _LABELS = {

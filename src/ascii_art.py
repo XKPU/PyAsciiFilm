@@ -3,7 +3,7 @@ import os
 import json
 import numpy as np
 
-# onefile 模式下用 exe 同目录；否则用代码所在目录（与日志同目录）
+# onefile 用 exe 同目录，否则代码目录
 from utils import _app_dir
 CONFIG_FILE = os.path.join(_app_dir(), "setting.json")
 
@@ -19,13 +19,13 @@ _DEFAULT_CONFIG = {
     "Charset": "ASCII_CHARS_10"
 }
 
-# 上次选择位置在配置文件中的键名
+# 配置中记录上次选择目录的键名
 LAST_VIDEO_DIR_KEY = "LastVideoDir"
 LAST_EXPORT_DIR_KEY = "LastExportDir"
 
 
 def _ensure_config():
-    # 若 setting.json 不存在则用默认配置生成
+    # 无 setting.json 则写默认配置
     if not os.path.isfile(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
@@ -50,7 +50,7 @@ def load_charset():
 
 
 def _read_config():
-    # 读取完整配置字典（失败返回空字典），并确保配置文件存在
+    # 读取完整配置字典（失败返回空）
     _ensure_config()
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -61,7 +61,7 @@ def _read_config():
 
 
 def _write_config_value(key, value):
-    # 更新 setting.json 的单个顶层键并写回，保留其余配置
+    # 更新单个顶层键并写回
     cfg = _read_config()
     cfg[key] = value
     try:
@@ -71,7 +71,7 @@ def _write_config_value(key, value):
         pass
 
 
-# 从配置加载当前字符集（模块加载时执行一次）
+# 加载当前字符集（模块加载时一次）
 ASCII_CHARS = load_charset()
 
 
@@ -81,7 +81,7 @@ ANSI_COLOR_PREFIX = "\033[38;2;"
 
 
 def make_lookup(chars):
-    # 为指定字符集预生成 256 级灰度查找表
+    # 256 级灰度 -> 字符查找表
     return np.array([chars[i * len(chars) // 256] for i in range(256)], dtype=object)
 
 
@@ -97,7 +97,7 @@ _LEVEL_HALF = 1 << (_COLOR_QBITS - 1)
 
 
 def _build_ansi_lookup(chars):
-    # 预生成 (颜色索引, 亮度) -> ANSI 字符串 的查找表
+    # (颜色索引, 亮度) -> ANSI 字符串 查找表
     n = len(chars)
     table = np.empty((_N_COLOR_LEVELS, 256), dtype=object)
     for ci in range(_N_COLOR_LEVELS):
@@ -113,12 +113,12 @@ def _build_ansi_lookup(chars):
     return table
 
 
-# 预生成默认字符集的彩色查找表（仅模块加载时构建一次）
+# 默认字符集彩色查找表（模块加载时一次）
 ANSI_COLOR_LOOKUP = _build_ansi_lookup(ASCII_CHARS)
 
 
 def _color_index(r, g, b):
-    # 把 RGB 数组量化为 0..63 的颜色索引
+    # RGB 量化为 0..63 颜色索引
     ri = (r >> _LEVEL_SHIFT) * (2 ** (2 * _COLOR_QBITS))
     gi = (g >> _LEVEL_SHIFT) * (2 ** _COLOR_QBITS)
     bi = (b >> _LEVEL_SHIFT)
@@ -126,7 +126,7 @@ def _color_index(r, g, b):
 
 
 def generate_colored_frame(pixels, luminance):
-    # 终端 ANSI 彩色字符画（用于裸终端播放）
+    # 终端 ANSI 彩色字符画
     ci = _color_index(pixels[..., 0], pixels[..., 1], pixels[..., 2])
     ansi_grid = ANSI_COLOR_LOOKUP[ci, luminance]
     lines = ["".join(row) + ANSI_RESET for row in ansi_grid]
@@ -143,7 +143,7 @@ def generate_grayscale_frame(pixels):
 
 
 def reload_charset():
-    # 重新读取 setting.json，更新所有模块级查找表
+    # 重读 setting.json 并更新查找表
     global ASCII_CHARS, ASCII_LOOKUP, ANSI_COLOR_LOOKUP
     ASCII_CHARS = load_charset()
     ASCII_LOOKUP = make_lookup(ASCII_CHARS)

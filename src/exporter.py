@@ -20,7 +20,7 @@ from utils import (
     _set_ffmpeg_max_usage, _encode_threads,
 )
 
-# 灰度->字符查找表构建一次复用
+# 灰度->字符查找表（复用）
 _GRAY_LOOKUP = make_lookup(ASCII_CHARS)
 
 # 容器格式 -> ffmpeg 视频编码器候选（按顺序尝试）
@@ -35,7 +35,7 @@ _FMT_FFMPEG_CODECS = {
                              "-cpu-used", "8", "-b:v", "0", "-crf", "30"])],
 }
 
-# 各硬件编码器最大画布宽高上限（像素），超出则自动回退软件编码
+# 硬件编码器画布上限（px），超出回退软件编码
 _ENCODER_MAX_SIZE = {
     "h264_nvenc": (4096, 4096),
     "h264_qsv":   (4096, 4096),
@@ -46,7 +46,7 @@ _MAX_CANVAS_H = 8192
 
 
 class _FFmpegWriter:
-    # 基于随包 ffmpeg 子进程的视频写出器
+    # ffmpeg 子进程视频写出器
 
     def __init__(self, proc, codec):
         self._proc = proc
@@ -100,7 +100,7 @@ class QueuedWriter:
                 pass
 
     def write(self, frame):
-        # 将帧丢入队列
+        # 帧入队
         if self._error:
             raise self._error
         self._queue.put(frame)
@@ -110,7 +110,7 @@ class QueuedWriter:
         return self._writer.codec
 
     def release(self):
-        # 通知编码线程停止并等待结束（非阻塞入队，避免编码慢时卡住）
+        # 停止编码线程并等待（非阻塞入队，避免卡住）
         try:
             self._queue.put_nowait(None)
         except Exception:
@@ -171,7 +171,7 @@ def _make_ffmpeg_writer(output_path, fps, w, h, fmt, log, ffmpeg_usage=None):
 
 
 def _make_log(on_log):
-    # 构造传给 FrameReader 的 log 回调
+    # 构造 FrameReader 的 log 回调
     def _cb(msg):
         _log(msg)
         if on_log is not None:
@@ -184,7 +184,7 @@ def _make_log(on_log):
 
 # --------------------------- 字体 ---------------------------
 def _load_mono_font(charset=None):
-    # 加载一个 Windows 等宽字体
+    # 加载 Windows 等宽字体
     candidates = [
         "C:/Windows/Fonts/consola.ttf",
         "C:/Windows/Fonts/cour.ttf",
@@ -237,7 +237,7 @@ def _load_mono_font(charset=None):
 
 # --------------------------- 渲染辅助 ---------------------------
 def _build_glyph_atlas(font, cell_w, cell_h, chars):
-    # 一次性把字符集每个字形栅格化成字模图集
+    # 字符集字形栅格化为图集
     tile_w = max(1, int(math.ceil(cell_w)))
     tile_h = max(1, int(math.ceil(cell_h)))
     uniq = list(dict.fromkeys(chars))
@@ -255,7 +255,7 @@ def _build_glyph_atlas(font, cell_w, cell_h, chars):
 
 def _render_frame(char_grid, color_grid, atlas, tile_w, tile_h, char_to_idx, use_color,
                  canvas_w, canvas_h):
-    # 纯 numpy 渲染一帧为 BGR 字节
+    # numpy 渲染一帧为 BGR
     h, w = char_grid.shape
     H, W = h * tile_h, w * tile_w
     space_idx = char_to_idx.get(" ", 0)
@@ -285,7 +285,7 @@ def _render_frame(char_grid, color_grid, atlas, tile_w, tile_h, char_to_idx, use
 
 
 def _small(frame, target_w, target_h):
-    # 把一帧缩放到目标字符网格尺寸
+    # 缩放到目标字符网格尺寸
     if frame.shape[1] == target_w and frame.shape[0] == target_h:
         resized = frame
     else:
@@ -296,7 +296,7 @@ def _small(frame, target_w, target_h):
 
 
 def _grids_from_rgb(rgb, use_color, gray=None):
-    # 由已缩放的 RGB 数组生成字符网格与颜色网格
+    # RGB -> 字符网格与颜色网格
     lum = gray if gray is not None else cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
     char_grid = _GRAY_LOOKUP[lum]
     color_grid = rgb if use_color else None
@@ -307,9 +307,8 @@ def _grids_from_rgb(rgb, use_color, gray=None):
 def export_video(video_path, output_path, target_w, target_h, target_fps,
                  use_color=False, fmt="mp4", on_progress=None, on_done=None,
                  on_log=None, hwaccel=True, ffmpeg_usage=None, cancel=None):
-    # 单遍导出：解码的同时按目标帧率抽样并逐帧渲染编码
-    # cancel: 可选的无参可调用对象，返回 True 时中断导出并清理所有相关进程
-    # 单遍导出：解码的同时按目标帧率抽样并逐帧渲染编码
+    # 单遍导出：边解码边按目标帧率抽样、逐帧渲染编码
+    # cancel: 无参可调用，返回 True 时中断并清理进程
     decode_args = None
     if isinstance(hwaccel, dict):
         decode_args = hwaccel.get("decode_args")
@@ -383,7 +382,7 @@ def export_video(video_path, output_path, target_w, target_h, target_fps,
     if ok:
         _mux_audio(output_path, video_path, fmt, log)
     elif msg.startswith("已取消"):
-        # 取消时删除可能已生成的半成品文件
+        # 取消时删除半成品文件
         if os.path.isfile(output_path):
             try:
                 os.remove(output_path)
@@ -423,7 +422,7 @@ def _source_has_audio(video_path, log):
 
 
 def _mux_audio(output_video_path, source_video_path, fmt, log):
-    # 把原视频的音频轨并入无声导出视频
+    # 将原视频音轨并入无声导出视频
     if not os.path.isfile(output_video_path):
         return
     if not _source_has_audio(source_video_path, log):
