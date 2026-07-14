@@ -1,7 +1,6 @@
 # 程序入口
 import os
 import sys
-import threading
 import traceback
 
 from utils import _clear_log, _log, _log_error, _app_dir
