@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-VERSION="3.0.2"
+VERSION="$(tr -d '[:space:]' < ./VERSION)"
+VERSION="${VERSION:-0.0.0}"
 
-./venv/bin/python -m nuitka \
+.venv-linux/bin/python -m nuitka \
     --onefile \
     --standalone \
     --follow-imports \

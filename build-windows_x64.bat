@@ -1,7 +1,9 @@
 @echo off
-set VERSION=3.0.2
+set VERSION=
+for /f "usebackq delims=" %%v in ("VERSION") do set "VERSION=%%v"
+if not defined VERSION set VERSION=0.0.0
 
-.\.venv\Scripts\python.exe -m nuitka ^
+.venv-windows\Scripts\python.exe -m nuitka ^
     --onefile ^
     --standalone ^
     --follow-imports ^
