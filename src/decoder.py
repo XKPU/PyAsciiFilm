@@ -18,7 +18,7 @@ _FPS_FLAG = None
 
 
 def _fps_flag():
-    # 帧率直通参数：新版用 -fps_mode passthrough，旧版（<5.0）回退 -vsync 0
+    # 帧率直通参数
     global _FPS_FLAG
     if _FPS_FLAG is not None:
         return _FPS_FLAG
