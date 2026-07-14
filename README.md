@@ -11,7 +11,7 @@
 - `pillow`
 - `imageio-ffmpeg`
 - `textual`
-- `sounddevice`
+- `miniaudio`
 
 ## 构建依赖
 
