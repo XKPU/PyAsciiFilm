@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-VERSION="$(tr -d '[:space:]' < ./VERSION)"
+VERSION="$(tr -d '[:space:]' < ./version.txt)"
 VERSION="${VERSION:-0.0.0}"
 
 .venv-linux/bin/python -m nuitka \

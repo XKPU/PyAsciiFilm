@@ -1,6 +1,6 @@
 @echo off
 set VERSION=
-for /f "usebackq delims=" %%v in ("VERSION") do set "VERSION=%%v"
+for /f "usebackq delims=" %%v in ("version.txt") do set "VERSION=%%v"
 if not defined VERSION set VERSION=0.0.0
 
 .venv-windows\Scripts\python.exe -m nuitka ^
