@@ -22,6 +22,7 @@ jobs:
             --onefile `
             --standalone `
             --follow-imports `
+            --assume-yes-for-downloads `
             --enable-plugin=tk-inter `
             --include-package=textual `
             --include-package=rich._unicode_data `
@@ -58,6 +59,7 @@ jobs:
             --onefile `
             --standalone `
             --follow-imports `
+            --assume-yes-for-downloads `
             --enable-plugin=tk-inter `
             --include-package=textual `
             --include-package=rich._unicode_data `
@@ -93,6 +95,7 @@ jobs:
             --onefile \
             --standalone \
             --follow-imports \
+            --assume-yes-for-downloads \
             --enable-plugin=tk-inter \
             --include-package=textual \
             --include-package=rich._unicode_data \
@@ -108,7 +111,7 @@ jobs:
           path: dist/PyAsciiFilm-*
 
   build-linux-arm64:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -116,9 +119,6 @@ jobs:
           python-version: "3.10"
           cache: pip
           cache-dependency-path: requirements.txt
-      - run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
       - run: pip install nuitka ordered-set zstandard -r requirements.txt
       - run: |
           VERSION=$(cat version.txt | tr -d '[:space:]')
@@ -126,6 +126,7 @@ jobs:
             --onefile \
             --standalone \
             --follow-imports \
+            --assume-yes-for-downloads \
             --enable-plugin=tk-inter \
             --include-package=textual \
             --include-package=rich._unicode_data \
@@ -134,10 +135,7 @@ jobs:
             --output-filename="PyAsciiFilm-v${VERSION}-linux_arm64" \
             --output-dir=dist \
             --lto=yes \
-            --target-arch=aarch64 \
             src/main.py
-        env:
-          CC: aarch64-linux-gnu-gcc
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-linux-arm64
@@ -159,6 +157,7 @@ jobs:
             --onefile \
             --standalone \
             --follow-imports \
+            --assume-yes-for-downloads \
             --enable-plugin=tk-inter \
             --include-package=textual \
             --include-package=rich._unicode_data \
@@ -189,6 +188,7 @@ jobs:
             --onefile \
             --standalone \
             --follow-imports \
+            --assume-yes-for-downloads \
             --enable-plugin=tk-inter \
             --include-package=textual \
             --include-package=rich._unicode_data \
