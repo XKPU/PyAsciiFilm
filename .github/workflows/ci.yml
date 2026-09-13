@@ -1,9 +1,14 @@
 # GitHub Actions 跨平台构建流水线
+# 所有平台从 PyOxidizer 0.24.0 GitHub releases 下载预编译二进制
+# 实际 asset 名称参见: https://github.com/indygreg/PyOxidizer/releases/tag/pyoxidizer%2F0.24.0
 
 name: Cross-Platform Build
 
 on:
   workflow_dispatch:
+
+env:
+  PYOXIDIZER_VERSION: "0.24.0"
 
 jobs:
   build-windows-x64:
@@ -13,15 +18,18 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: pyoxidizer.exe
-          key: pyoxidizer-win-x64-0.24.0
+          key: pyoxidizer-win-x64-${{ env.PYOXIDIZER_VERSION }}
       - run: |
           if (!(Test-Path pyoxidizer.exe)) {
-            Invoke-WebRequest -Uri "https://github.com/indygreg/PyOxidizer/releases/download/pyoxidizer%2F0.24.0/pyoxidizer-0.24.0-x86_64-pc-windows-msvc.zip" -OutFile pyoxidizer.zip -UseBasicParsing
+            $url = "https://github.com/indygreg/PyOxidizer/releases/download/pyoxidizer%2F${{ env.PYOXIDIZER_VERSION }}/pyoxidizer-${{ env.PYOXIDIZER_VERSION }}-x86_64-pc-windows-msvc.zip"
+            Invoke-WebRequest -Uri $url -OutFile pyoxidizer.zip -UseBasicParsing
             Expand-Archive pyoxidizer.zip -DestinationPath pyoxidizer-extract -Force
-            Copy-Item pyoxidizer-extract\pyoxidizer.exe . -Force
+            $exe = Get-ChildItem -Path pyoxidizer-extract -Recurse -Filter pyoxidizer.exe -ErrorAction SilentlyContinue
+            if ($exe) { Copy-Item $exe.FullName . -Force } else { throw "pyoxidizer.exe not found in zip" }
             Remove-Item pyoxidizer.zip -Force
             Remove-Item pyoxidizer-extract -Recurse -Force
           }
+        shell: pwsh
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
@@ -43,15 +51,25 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: pyoxidizer.exe
-          key: pyoxidizer-win-x64-0.24.0
+          key: pyoxidizer-win-arm64-${{ env.PYOXIDIZER_VERSION }}
       - run: |
           if (!(Test-Path pyoxidizer.exe)) {
-            Invoke-WebRequest -Uri "https://github.com/indygreg/PyOxidizer/releases/download/pyoxidizer%2F0.24.0/pyoxidizer-0.24.0-x86_64-pc-windows-msvc.zip" -OutFile pyoxidizer.zip -UseBasicParsing
-            Expand-Archive pyoxidizer.zip -DestinationPath pyoxidizer-extract -Force
-            Copy-Item pyoxidizer-extract\pyoxidizer.exe . -Force
-            Remove-Item pyoxidizer.zip -Force
-            Remove-Item pyoxidizer-extract -Recurse -Force
+            # 0.24.0 release 没有 ARM64 Windows 预编译二进制，改用 cargo install
+            # 必须先设置 Windows SDK 环境变量，否则 libgit2-sys 链接会失败
+            $sdkLibDir = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Lib" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+            $sdkVer = $sdkLibDir.Name
+            $sdkRoot = "C:\Program Files (x86)\Windows Kits\10"
+            $env:LIB = "$sdkRoot\Lib\$sdkVer\um\x64;" + $env:LIB
+            $env:INCLUDE = "$sdkRoot\Include\$sdkVer\um;" + $env:INCLUDE
+            if (-not (Test-Path cargo)) {
+              iwr https://sh.rustup.rs -OutFile rustup-init.ps1
+              .\rustup-init.ps1 -y
+            }
+            $env:PATH = "C:\Users\runneradmin\.cargo\bin;" + $env:PATH
+            cargo install pyoxidizer --version ${{ env.PYOXIDIZER_VERSION }}
+            Get-ChildItem .cargo\bin\pyoxidizer* -ErrorAction SilentlyContinue | ForEach-Object { Copy-Item $_.FullName .\pyoxidizer.exe -Force }
           }
+        shell: pwsh
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
@@ -73,11 +91,12 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: pyoxidizer
-          key: pyoxidizer-linux-x64-0.24.0
+          key: pyoxidizer-linux-x64-${{ env.PYOXIDIZER_VERSION }}
       - run: |
           if [ ! -f pyoxidizer ]; then
-            curl -sSfL "https://github.com/indygreg/PyOxidizer/releases/download/pyoxidizer%2F0.24.0/pyoxidizer-0.24.0-x86_64-unknown-linux-gnu.tar.gz" -o pyoxidizer.tar.gz
-            tar xzf pyoxidizer.tar.gz --strip-components=1 pyoxidizer-0.24.0-x86_64-unknown-linux-gnu/pyoxidizer
+            # 实际 asset: pyoxidizer-0.24.0-x86_64-unknown-linux-musl.tar.gz
+            curl -sSfL "https://github.com/indygreg/PyOxidizer/releases/download/pyoxidizer%2F${{ env.PYOXIDIZER_VERSION }}/pyoxidizer-${{ env.PYOXIDIZER_VERSION }}-x86_64-unknown-linux-musl.tar.gz" -o pyoxidizer.tar.gz
+            tar xzf pyoxidizer.tar.gz --strip-components=1 '*/pyoxidizer' 2>/dev/null || tar xzf pyoxidizer.tar.gz --strip-components=1 '*/pyoxidizer'
             chmod +x pyoxidizer
             rm pyoxidizer.tar.gz
           fi
@@ -103,11 +122,12 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: pyoxidizer
-          key: pyoxidizer-linux-x64-0.24.0
+          key: pyoxidizer-linux-arm64-${{ env.PYOXIDIZER_VERSION }}
       - run: |
           if [ ! -f pyoxidizer ]; then
-            curl -sSfL "https://github.com/indygreg/PyOxidizer/releases/download/pyoxidizer%2F0.24.0/pyoxidizer-0.24.0-x86_64-unknown-linux-gnu.tar.gz" -o pyoxidizer.tar.gz
-            tar xzf pyoxidizer.tar.gz --strip-components=1 pyoxidizer-0.24.0-x86_64-unknown-linux-gnu/pyoxidizer
+            # 实际 asset: pyoxidizer-0.24.0-aarch64-unknown-linux-musl.tar.gz
+            curl -sSfL "https://github.com/indygreg/PyOxidizer/releases/download/pyoxidizer%2F${{ env.PYOXIDIZER_VERSION }}/pyoxidizer-${{ env.PYOXIDIZER_VERSION }}-aarch64-unknown-linux-musl.tar.gz" -o pyoxidizer.tar.gz
+            tar xzf pyoxidizer.tar.gz --strip-components=1 '*/pyoxidizer' 2>/dev/null || tar xzf pyoxidizer.tar.gz --strip-components=1 '*/pyoxidizer'
             chmod +x pyoxidizer
             rm pyoxidizer.tar.gz
           fi
@@ -133,11 +153,12 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: pyoxidizer
-          key: pyoxidizer-macos-x64-0.24.0
+          key: pyoxidizer-macos-x64-${{ env.PYOXIDIZER_VERSION }}
       - run: |
           if [ ! -f pyoxidizer ]; then
-            curl -sSfL "https://github.com/indygreg/PyOxidizer/releases/download/pyoxidizer%2F0.24.0/pyoxidizer-0.24.0-x86_64-apple-darwin.tar.gz" -o pyoxidizer.tar.gz
-            tar xzf pyoxidizer.tar.gz --strip-components=1 pyoxidizer-0.24.0-x86_64-apple-darwin/pyoxidizer
+            # 实际 asset: pyoxidizer-0.24.0-x86_64-apple-darwin.tar.gz
+            curl -sSfL "https://github.com/indygreg/PyOxidizer/releases/download/pyoxidizer%2F${{ env.PYOXIDIZER_VERSION }}/pyoxidizer-${{ env.PYOXIDIZER_VERSION }}-x86_64-apple-darwin.tar.gz" -o pyoxidizer.tar.gz
+            tar xzf pyoxidizer.tar.gz --strip-components=1 '*/pyoxidizer'
             chmod +x pyoxidizer
             rm pyoxidizer.tar.gz
           fi
@@ -162,11 +183,12 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: pyoxidizer
-          key: pyoxidizer-macos-arm64-0.24.0
+          key: pyoxidizer-macos-arm64-${{ env.PYOXIDIZER_VERSION }}
       - run: |
           if [ ! -f pyoxidizer ]; then
-            curl -sSfL "https://github.com/indygreg/PyOxidizer/releases/download/pyoxidizer%2F0.24.0/pyoxidizer-0.24.0-aarch64-apple-darwin.tar.gz" -o pyoxidizer.tar.gz
-            tar xzf pyoxidizer.tar.gz --strip-components=1 pyoxidizer-0.24.0-aarch64-apple-darwin/pyoxidizer
+            # 实际 asset: pyoxidizer-0.24.0-aarch64-apple-darwin.tar.gz
+            curl -sSfL "https://github.com/indygreg/PyOxidizer/releases/download/pyoxidizer%2F${{ env.PYOXIDIZER_VERSION }}/pyoxidizer-${{ env.PYOXIDIZER_VERSION }}-aarch64-apple-darwin.tar.gz" -o pyoxidizer.tar.gz
+            tar xzf pyoxidizer.tar.gz --strip-components=1 '*/pyoxidizer'
             chmod +x pyoxidizer
             rm pyoxidizer.tar.gz
           fi
