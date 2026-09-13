@@ -42,8 +42,6 @@
 ### 构建配置说明
 
 - `.github/workflows/ci.yml` — GitHub Actions 自动化构建流水线（6 个平台）
-- `pyproject.toml` — 项目元数据与依赖声明（PEP 621）
-- `pyoxidizer.toml` — PyOxidizer 构建配置（含所有目标平台）
 
 ## 许可证
 
