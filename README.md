@@ -36,7 +36,6 @@
 | Windows | x86_64 | `.exe` | `windows-latest` |
 | Linux | x86_64 | 二进制可执行文件 | `ubuntu-latest` |
 | Linux | aarch64 (ARM64) | 二进制可执行文件 | `ubuntu-latest` |
-| macOS | x86_64 | 二进制可执行文件 | `macos-latest` |
 | macOS | aarch64 (Apple Silicon) | 二进制可执行文件 | `macos-latest` |
 
 ### 构建配置说明
