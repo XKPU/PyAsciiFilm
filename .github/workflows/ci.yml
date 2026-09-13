@@ -13,10 +13,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
+      - run: choco install windows-sdk-10.0 -y
       - run: cargo install pyoxidizer
       - run: |
           pip install -r requirements.txt
-          pyoxidizer build --target-triple x86_64-pc-windows-msvc --opt-level=3 --lto
+          pyoxidizer build --target-triple x86_64-pc-windows-msvc
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-windows-x64
@@ -29,10 +30,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-pc-windows-msvc
+      - run: choco install windows-sdk-10.0 -y
       - run: cargo install pyoxidizer
       - run: |
           pip install -r requirements.txt
-          pyoxidizer build --target-triple aarch64-pc-windows-msvc --opt-level=3 --lto
+          pyoxidizer build --target-triple aarch64-pc-windows-msvc
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-windows-arm64
@@ -49,7 +51,7 @@ jobs:
       - run: |
           sudo apt-get update && sudo apt-get install -y python3 python3-pip
           pip3 install -r requirements.txt
-          pyoxidizer build --target-triple x86_64-unknown-linux-gnu --opt-level=3 --lto
+          pyoxidizer build --target-triple x86_64-unknown-linux-gnu
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-linux-x64
@@ -66,7 +68,7 @@ jobs:
       - run: |
           sudo apt-get update && sudo apt-get install -y python3 python3-pip qemu-user-static
           pip3 install -r requirements.txt
-          pyoxidizer build --target-triple aarch64-unknown-linux-gnu --opt-level=3 --lto
+          pyoxidizer build --target-triple aarch64-unknown-linux-gnu
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-linux-arm64
@@ -81,9 +83,8 @@ jobs:
           targets: x86_64-apple-darwin
       - run: cargo install pyoxidizer
       - run: |
-          brew install python@3.8
           pip3 install -r requirements.txt
-          pyoxidizer build --target-triple x86_64-apple-darwin --opt-level=3 --lto
+          pyoxidizer build --target-triple x86_64-apple-darwin
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-macos-x64
@@ -98,9 +99,8 @@ jobs:
           targets: aarch64-apple-darwin
       - run: cargo install pyoxidizer
       - run: |
-          brew install python@3.8
           pip3 install -r requirements.txt
-          pyoxidizer build --target-triple aarch64-apple-darwin --opt-level=3 --lto
+          pyoxidizer build --target-triple aarch64-apple-darwin
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-macos-arm64
