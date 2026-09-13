@@ -8,10 +8,7 @@ application_name = "pyasciifilm"
 application_version = "3.0.2"
 python_path = "."
 
-# Python 运行时分发
-[python_distribution]
-python_version = "3.10"
-
+# Python 运行时分发由 PyOxidizer 自动管理，无需手动配置
 # 打包配置
 # requirements.txt 会被自动包含（python_path = "." 指定源码目录）
 
@@ -25,6 +22,3 @@ install = true
 type = "file"
 path = "LICENSE"
 install = true
-
-# 构建目标（三方平台由 build --target-triple 指定，此处不需要）
-
