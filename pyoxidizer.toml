@@ -1,18 +1,9 @@
 # PyOxidizer 构建配置
 # 跨平台、跨架构构建
 #
-# 使用方法：
-#   pyoxidizer init    # 生成初始配置
-#   pyoxidizer build   # 构建当前平台
-#   pyoxidizer build --target x86_64-unknown-linux-gnu  # 交叉编译
-#
-# 目标三元组：
-#   aarch64-pc-windows-msvc  Windows ARM64
-#   x86_64-pc-windows-msvc   Windows x64
-#   x86_64-unknown-linux-gnu  Linux x64
-#   aarch64-unknown-linux-gnu Linux ARM64
-#   aarch64-apple-darwin     macOS ARM64 (Apple Silicon)
-#   x86_64-apple-darwin      macOS x64
+# ⚠️ 注意：此文件为 Starlark 语法，不是标准 TOML
+#   - 标识符中不能使用连字符（-），必须用下划线（_）
+#   - 例如 python_version，不是 python-version
 
 [package]
 name = "pyasciifilm"
@@ -41,28 +32,13 @@ install = true
 name = "pyasciifilm-deps"
 path = "requirements.txt"
 
-# 目标平台配置
-[target.aarch64-pc-windows-msvc]
-python-version = "3.10"
-
-[target.x86_64-pc-windows-msvc]
-python-version = "3.10"
-
-[target.x86_64-unknown-linux-gnu]
-python-version = "3.10"
-
-[target.aarch64-unknown-linux-gnu]
-python-version = "3.10"
-
-[target.aarch64-apple-darwin]
-python-version = "3.10"
-
-[target.x86_64-apple-darwin]
-python-version = "3.10"
-
 # 全局构建设置
 [settings]
 lto = true
-opt-level = 3
+opt_level = 3
 compress = true
-include-stdlib = true
+include_stdlib = true
+
+# Python 版本（全局）
+[python_distribution]
+python_version = "3.10"

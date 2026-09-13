@@ -10,27 +10,25 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
       - uses: actions/cache@v4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/bin/pyoxidizer.exe
-          key: cargo-win-x64-pyoxidizer-0.24.0
-      - uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-      - run: cargo install pyoxidizer
+          path: pyoxidizer.exe
+          key: pyoxidizer-win-x64-0.24.0
+      - run: |
+          if (!(Test-Path pyoxidizer.exe)) {
+            Invoke-WebRequest -Uri "https://github.com/indygreg/PyOxidizer/releases/download/pyoxidizer%2F0.24.0/pyoxidizer-0.24.0-x86_64-pc-windows-msvc.zip" -OutFile pyoxidizer.zip -UseBasicParsing
+            Expand-Archive pyoxidizer.zip -DestinationPath pyoxidizer-extract -Force
+            Copy-Item pyoxidizer-extract\pyoxidizer.exe . -Force
+            Remove-Item pyoxidizer.zip -Force
+            Remove-Item pyoxidizer-extract -Recurse -Force
+          }
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
           cache: pip
           cache-dependency-path: requirements.txt
       - run: pip install -r requirements.txt
-      - run: pyoxidizer build --target-triple x86_64-pc-windows-msvc
+      - run: .\pyoxidizer.exe build --target-triple x86_64-pc-windows-msvc
         env:
           PYOXIDIZER_CONFIG: ${{ github.workspace }}/pyoxidizer.toml
       - uses: actions/upload-artifact@v4
@@ -42,27 +40,25 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-pc-windows-msvc
       - uses: actions/cache@v4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/bin/pyoxidizer.exe
-          key: cargo-win-arm64-pyoxidizer-0.24.0
-      - uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: amd64
-      - run: cargo install pyoxidizer
+          path: pyoxidizer.exe
+          key: pyoxidizer-win-x64-0.24.0
+      - run: |
+          if (!(Test-Path pyoxidizer.exe)) {
+            Invoke-WebRequest -Uri "https://github.com/indygreg/PyOxidizer/releases/download/pyoxidizer%2F0.24.0/pyoxidizer-0.24.0-x86_64-pc-windows-msvc.zip" -OutFile pyoxidizer.zip -UseBasicParsing
+            Expand-Archive pyoxidizer.zip -DestinationPath pyoxidizer-extract -Force
+            Copy-Item pyoxidizer-extract\pyoxidizer.exe . -Force
+            Remove-Item pyoxidizer.zip -Force
+            Remove-Item pyoxidizer-extract -Recurse -Force
+          }
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
           cache: pip
           cache-dependency-path: requirements.txt
       - run: pip install -r requirements.txt
-      - run: pyoxidizer build --target-triple aarch64-pc-windows-msvc
+      - run: .\pyoxidizer.exe build --target-triple aarch64-pc-windows-msvc
         env:
           PYOXIDIZER_CONFIG: ${{ github.workspace }}/pyoxidizer.toml
       - uses: actions/upload-artifact@v4
@@ -74,17 +70,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-unknown-linux-gnu
       - uses: actions/cache@v4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/bin/pyoxidizer
-          key: cargo-linux-x64-pyoxidizer-0.24.0
-      - run: cargo install pyoxidizer
+          path: pyoxidizer
+          key: pyoxidizer-linux-x64-0.24.0
+      - run: |
+          if [ ! -f pyoxidizer ]; then
+            curl -sSfL "https://github.com/indygreg/PyOxidizer/releases/download/pyoxidizer%2F0.24.0/pyoxidizer-0.24.0-x86_64-unknown-linux-gnu.tar.gz" -o pyoxidizer.tar.gz
+            tar xzf pyoxidizer.tar.gz --strip-components=1 pyoxidizer-0.24.0-x86_64-unknown-linux-gnu/pyoxidizer
+            chmod +x pyoxidizer
+            rm pyoxidizer.tar.gz
+          fi
       - run: sudo apt-get update && sudo apt-get install -y python3 python3-pip
       - uses: actions/setup-python@v5
         with:
@@ -92,7 +88,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
       - run: pip3 install -r requirements.txt
-      - run: pyoxidizer build --target-triple x86_64-unknown-linux-gnu
+      - run: ./pyoxidizer build --target-triple x86_64-unknown-linux-gnu
         env:
           PYOXIDIZER_CONFIG: ${{ github.workspace }}/pyoxidizer.toml
       - uses: actions/upload-artifact@v4
@@ -104,17 +100,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-unknown-linux-gnu
       - uses: actions/cache@v4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/bin/pyoxidizer
-          key: cargo-linux-arm64-pyoxidizer-0.24.0
-      - run: cargo install pyoxidizer
+          path: pyoxidizer
+          key: pyoxidizer-linux-x64-0.24.0
+      - run: |
+          if [ ! -f pyoxidizer ]; then
+            curl -sSfL "https://github.com/indygreg/PyOxidizer/releases/download/pyoxidizer%2F0.24.0/pyoxidizer-0.24.0-x86_64-unknown-linux-gnu.tar.gz" -o pyoxidizer.tar.gz
+            tar xzf pyoxidizer.tar.gz --strip-components=1 pyoxidizer-0.24.0-x86_64-unknown-linux-gnu/pyoxidizer
+            chmod +x pyoxidizer
+            rm pyoxidizer.tar.gz
+          fi
       - run: sudo apt-get update && sudo apt-get install -y python3 python3-pip qemu-user-static
       - uses: actions/setup-python@v5
         with:
@@ -122,7 +118,7 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
       - run: pip3 install -r requirements.txt
-      - run: pyoxidizer build --target-triple aarch64-unknown-linux-gnu
+      - run: ./pyoxidizer build --target-triple aarch64-unknown-linux-gnu
         env:
           PYOXIDIZER_CONFIG: ${{ github.workspace }}/pyoxidizer.toml
       - uses: actions/upload-artifact@v4
@@ -134,24 +130,24 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-apple-darwin
       - uses: actions/cache@v4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/bin/pyoxidizer
-          key: cargo-macos-x64-pyoxidizer-0.24.0
-      - run: cargo install pyoxidizer
+          path: pyoxidizer
+          key: pyoxidizer-macos-x64-0.24.0
+      - run: |
+          if [ ! -f pyoxidizer ]; then
+            curl -sSfL "https://github.com/indygreg/PyOxidizer/releases/download/pyoxidizer%2F0.24.0/pyoxidizer-0.24.0-x86_64-apple-darwin.tar.gz" -o pyoxidizer.tar.gz
+            tar xzf pyoxidizer.tar.gz --strip-components=1 pyoxidizer-0.24.0-x86_64-apple-darwin/pyoxidizer
+            chmod +x pyoxidizer
+            rm pyoxidizer.tar.gz
+          fi
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
           cache: pip
           cache-dependency-path: requirements.txt
       - run: pip3 install -r requirements.txt
-      - run: pyoxidizer build --target-triple x86_64-apple-darwin
+      - run: ./pyoxidizer build --target-triple x86_64-apple-darwin
         env:
           PYOXIDIZER_CONFIG: ${{ github.workspace }}/pyoxidizer.toml
       - uses: actions/upload-artifact@v4
@@ -163,24 +159,24 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin
       - uses: actions/cache@v4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/bin/pyoxidizer
-          key: cargo-macos-arm64-pyoxidizer-0.24.0
-      - run: cargo install pyoxidizer
+          path: pyoxidizer
+          key: pyoxidizer-macos-arm64-0.24.0
+      - run: |
+          if [ ! -f pyoxidizer ]; then
+            curl -sSfL "https://github.com/indygreg/PyOxidizer/releases/download/pyoxidizer%2F0.24.0/pyoxidizer-0.24.0-aarch64-apple-darwin.tar.gz" -o pyoxidizer.tar.gz
+            tar xzf pyoxidizer.tar.gz --strip-components=1 pyoxidizer-0.24.0-aarch64-apple-darwin/pyoxidizer
+            chmod +x pyoxidizer
+            rm pyoxidizer.tar.gz
+          fi
       - uses: actions/setup-python@v5
         with:
           python-version: "3.10"
           cache: pip
           cache-dependency-path: requirements.txt
       - run: pip3 install -r requirements.txt
-      - run: pyoxidizer build --target-triple aarch64-apple-darwin
+      - run: ./pyoxidizer build --target-triple aarch64-apple-darwin
         env:
           PYOXIDIZER_CONFIG: ${{ github.workspace }}/pyoxidizer.toml
       - uses: actions/upload-artifact@v4
