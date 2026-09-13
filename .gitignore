@@ -11,13 +11,6 @@ __pycache__/
 # Virtual environments
 .venv/
 
-# Build output
-build/
-dist/
-
-# Runtime
-pyasciifilm.log
-
 # IDE
 .idea/
 .vscode/
@@ -28,8 +21,6 @@ pyasciifilm.log
 .DS_Store
 Thumbs.db
 
-# Logs
-*.log
 
 # Environment
 .env
