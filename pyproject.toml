@@ -1,0 +1,55 @@
+[project]
+name = "pyasciifilm"
+version = "3.0.2"
+description = "将视频实时转换为 ASCII 字符画并在终端播放的创意工具"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "AGPL-3.0"}
+authors = [
+    {name = "XKPU"},
+]
+keywords = ["ascii-art", "video", "terminal", "textual", "ffmpeg"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+    "Topic :: Multimedia :: Video",
+    "Topic :: Software Development :: User Interfaces",
+    "Topic :: Terminals",
+]
+
+dependencies = [
+    "textual == 3.1.0",
+    "numpy",
+    "opencv-python",
+    "imageio-ffmpeg",
+    "pillow == 10.4.0",
+    "miniaudio",
+    "zstandard",
+]
+
+[project.urls]
+Homepage = "https://github.com/XKPU/PyAsciiFilm"
+Repository = "https://github.com/XKPU/PyAsciiFilm"
+Documentation = "https://github.com/XKPU/PyAsciiFilm/blob/main/README.md"
+Issues = "https://github.com/XKPU/PyAsciiFilm/issues"
+
+[project.scripts]
+pyasciifilm = "main:main"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools]
+include-package-data = true

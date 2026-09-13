@@ -10,6 +10,5 @@ pillow == 10.4.0
 # 音频
 miniaudio
 
-# 构建
-nuitka
+# 运行时依赖
 zstandard

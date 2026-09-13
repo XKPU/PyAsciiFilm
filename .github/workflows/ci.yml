@@ -1,0 +1,162 @@
+# GitHub Actions 跨平台构建流水线
+# 每次 push 或 release 时自动为所有平台构建
+
+name: Cross-Platform Build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build-linux-x64:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            arch: x64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+      - uses: actions-rs/install@v0.1
+        with:
+          crate: pyoxidizer
+          use-tool-cache: true
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y python3.8 python3.8-dev python3-pip
+          pip3 install -r requirements.txt
+          pyoxidizer build --target ${{ matrix.target }} --opt-level=3 --lto
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-linux-x64
+          path: PyAsciiFilm-v*
+
+  build-linux-arm64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: aarch64-unknown-linux-gnu
+          override: true
+      - uses: actions-rs/install@v0.1
+        with:
+          crate: pyoxidizer
+          use-tool-cache: true
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y python3.8 python3.8-dev python3-pip qemu-user-static
+          pip3 install -r requirements.txt
+          pyoxidizer build --target aarch64-unknown-linux-gnu --opt-level=3 --lto
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-linux-arm64
+          path: PyAsciiFilm-v*
+
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-apple-darwin
+            arch: x64
+          - target: aarch64-apple-darwin
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ matrix.target }}
+          override: true
+      - uses: actions-rs/install@v0.1
+        with:
+          crate: pyoxidizer
+          use-tool-cache: true
+      - run: |
+          brew install python@3.8
+          pip3 install -r requirements.txt
+          pyoxidizer build --target ${{ matrix.target }} --opt-level=3 --lto
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-macos-${{ matrix.arch }}
+          path: PyAsciiFilm-v*
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: x86_64-pc-windows-msvc
+          override: true
+      - uses: actions-rs/install@v0.1
+        with:
+          crate: pyoxidizer
+          use-tool-cache: true
+      - run: |
+          pip install -r requirements.txt
+          pyoxidizer build --target x86_64-pc-windows-msvc --opt-level=3 --lto
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-windows-x64
+          path: PyAsciiFilm-v*.exe
+
+  build-windows-arm64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: aarch64-pc-windows-msvc
+          override: true
+      - uses: actions-rs/install@v0.1
+        with:
+          crate: pyoxidizer
+          use-tool-cache: true
+      - run: |
+          pip install -r requirements.txt
+          # Windows ARM64 交叉编译需要 Visual Studio ARM64 工具链
+          pyoxidizer build --target aarch64-pc-windows-msvc --opt-level=3 --lto
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-windows-arm64
+          path: PyAsciiFilm-v*.exe
+
+  # Docker 镜像构建（可选）
+  build-docker:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            target: x86_64-unknown-linux-gnu
+          - platform: linux/arm64
+            target: aarch64-unknown-linux-gnu
+          - platform: windows/amd64
+            target: x86_64-pc-windows-msvc
+          - platform: windows/arm64
+            target: aarch64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          docker buildx create --use
+          docker buildx build \
+            --platform ${{ matrix.platform }} \
+            --build-arg TARGETARCH=${{ matrix.platform == 'linux/amd64' && 'amd64' || 'arm64' }} \
+            -t pyasciifilm:${{ matrix.platform }} \
+            -f Dockerfile.cross .
+          docker buildx build \
+            --platform ${{ matrix.platform }} \
+            -t pyasciifilm:${{ matrix.platform }} \
+            .

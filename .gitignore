@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pdb
+*.egg-info/
+*.egg
+*.dist-info/
+*.whl
+
+# Virtual environments
+.venv/
+
+# Build output
+build/
+dist/
+
+# Runtime
+pyasciifilm.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment
+.env
+
+# tast
+test.bat
+setting.json

@@ -1,0 +1,68 @@
+# PyOxidizer 构建配置
+# 跨平台、跨架构构建
+#
+# 使用方法：
+#   pyoxidizer init    # 生成初始配置
+#   pyoxidizer build   # 构建当前平台
+#   pyoxidizer build --target x86_64-unknown-linux-gnu  # 交叉编译
+#
+# 目标三元组：
+#   aarch64-pc-windows-msvc  Windows ARM64
+#   x86_64-pc-windows-msvc   Windows x64
+#   x86_64-unknown-linux-gnu  Linux x64
+#   aarch64-unknown-linux-gnu Linux ARM64
+#   aarch64-apple-darwin     macOS ARM64 (Apple Silicon)
+#   x86_64-apple-darwin      macOS x64
+
+[package]
+name = "pyasciifilm"
+version = "3.0.2"
+description = "将视频实时转换为 ASCII 字符画并在终端播放的创意工具"
+authors = ["XKPU"]
+
+# 入口模块
+[package-source]
+path = "src"
+main = "main.py"
+
+# 资源文件
+[[resources]]
+type = "file"
+path = "setting.json"
+install = true
+
+[[resources]]
+type = "file"
+path = "LICENSE"
+install = true
+
+# Python 依赖（从 requirements.txt 读取）
+[[distributions]]
+name = "pyasciifilm-deps"
+path = "requirements.txt"
+
+# 目标平台配置
+[target.aarch64-pc-windows-msvc]
+python-version = "3.8"
+
+[target.x86_64-pc-windows-msvc]
+python-version = "3.8"
+
+[target.x86_64-unknown-linux-gnu]
+python-version = "3.8"
+
+[target.aarch64-unknown-linux-gnu]
+python-version = "3.8"
+
+[target.aarch64-apple-darwin]
+python-version = "3.8"
+
+[target.x86_64-apple-darwin]
+python-version = "3.8"
+
+# 全局构建设置
+[settings]
+lto = true
+optimize-level = 3
+compress = true
+include-stdlib = true
