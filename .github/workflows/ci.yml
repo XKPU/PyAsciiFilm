@@ -1,6 +1,3 @@
-# GitHub Actions 跨平台编译流水线
-# 使用 Nuitka 将 Python 编译为原生机器码（Python → C → 机器码）
-
 name: Cross-Platform Build
 
 on:
@@ -17,18 +14,31 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
       - run: pip install nuitka ordered-set zstandard -r requirements.txt
-      - run: |
-          nuitka --standalone --onefile `
-            --lto=yes `
-            --output-filename=PyAsciiFilm.exe `
+      - shell: pwsh
+        run: |
+          $VERSION = Get-Content version.txt -Raw
+          $VERSION = $VERSION.Trim()
+          python -m nuitka `
+            --onefile `
+            --standalone `
+            --follow-imports `
+            --enable-plugin=tk-inter `
+            --include-package=textual `
+            --include-package=rich._unicode_data `
+            --include-package=imageio_ffmpeg `
+            --include-module=miniaudio `
+            --output-filename="PyAsciiFilm-v${VERSION}-windows_x64.exe" `
             --output-dir=dist `
-            --include-data-files=setting.json=setting.json `
-            --include-data-files=LICENSE=LICENSE `
+            --lto=yes `
+            --windows-company-name=K_PU `
+            --windows-product-name=PyAsciiFilm `
+            --windows-file-version=$VERSION `
+            --windows-product-version=$VERSION `
             src/main.py
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-windows-x64
-          path: dist/PyAsciiFilm.exe
+          path: dist/*.exe
 
   build-windows-arm64:
     runs-on: windows-latest
@@ -40,19 +50,32 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
       - run: pip install nuitka ordered-set zstandard -r requirements.txt
-      - run: |
-          nuitka --standalone --onefile `
-            --lto=yes `
-            --output-filename=PyAsciiFilm.exe `
+      - shell: pwsh
+        run: |
+          $VERSION = Get-Content version.txt -Raw
+          $VERSION = $VERSION.Trim()
+          python -m nuitka `
+            --onefile `
+            --standalone `
+            --follow-imports `
+            --enable-plugin=tk-inter `
+            --include-package=textual `
+            --include-package=rich._unicode_data `
+            --include-package=imageio_ffmpeg `
+            --include-module=miniaudio `
+            --output-filename="PyAsciiFilm-v${VERSION}-windows_arm64.exe" `
             --output-dir=dist `
+            --lto=yes `
             --target-arch=arm64 `
-            --include-data-files=setting.json=setting.json `
-            --include-data-files=LICENSE=LICENSE `
+            --windows-company-name=K_PU `
+            --windows-product-name=PyAsciiFilm `
+            --windows-file-version=$VERSION `
+            --windows-product-version=$VERSION `
             src/main.py
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-windows-arm64
-          path: dist/PyAsciiFilm.exe
+          path: dist/*.exe
 
   build-linux-x64:
     runs-on: ubuntu-latest
@@ -65,17 +88,24 @@ jobs:
           cache-dependency-path: requirements.txt
       - run: pip install nuitka ordered-set zstandard -r requirements.txt
       - run: |
-          nuitka --standalone --onefile \
-            --lto=yes \
-            --output-filename=PyAsciiFilm \
+          VERSION=$(cat version.txt | tr -d '[:space:]')
+          python -m nuitka \
+            --onefile \
+            --standalone \
+            --follow-imports \
+            --enable-plugin=tk-inter \
+            --include-package=textual \
+            --include-package=rich._unicode_data \
+            --include-package=imageio_ffmpeg \
+            --include-module=miniaudio \
+            --output-filename="PyAsciiFilm-v${VERSION}-linux_x64" \
             --output-dir=dist \
-            --include-data-files=setting.json=setting.json \
-            --include-data-files=LICENSE=LICENSE \
+            --lto=yes \
             src/main.py
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-linux-x64
-          path: dist/PyAsciiFilm
+          path: dist/PyAsciiFilm-*
 
   build-linux-arm64:
     runs-on: ubuntu-latest
@@ -91,19 +121,27 @@ jobs:
           sudo apt-get install -y gcc-aarch64-linux-gnu
       - run: pip install nuitka ordered-set zstandard -r requirements.txt
       - run: |
-          nuitka --standalone --onefile \
-            --lto=yes \
-            --output-filename=PyAsciiFilm \
+          VERSION=$(cat version.txt | tr -d '[:space:]')
+          python -m nuitka \
+            --onefile \
+            --standalone \
+            --follow-imports \
+            --enable-plugin=tk-inter \
+            --include-package=textual \
+            --include-package=rich._unicode_data \
+            --include-package=imageio_ffmpeg \
+            --include-module=miniaudio \
+            --output-filename="PyAsciiFilm-v${VERSION}-linux_arm64" \
             --output-dir=dist \
+            --lto=yes \
             --target-arch=aarch64 \
-            --target-os=linux \
-            --include-data-files=setting.json=setting.json \
-            --include-data-files=LICENSE=LICENSE \
             src/main.py
+        env:
+          CC: aarch64-linux-gnu-gcc
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-linux-arm64
-          path: dist/PyAsciiFilm
+          path: dist/PyAsciiFilm-*
 
   build-macos-x64:
     runs-on: macos-13
@@ -116,17 +154,24 @@ jobs:
           cache-dependency-path: requirements.txt
       - run: pip install nuitka ordered-set zstandard -r requirements.txt
       - run: |
-          nuitka --standalone --onefile \
-            --lto=yes \
-            --output-filename=PyAsciiFilm \
+          VERSION=$(cat version.txt | tr -d '[:space:]')
+          python -m nuitka \
+            --onefile \
+            --standalone \
+            --follow-imports \
+            --enable-plugin=tk-inter \
+            --include-package=textual \
+            --include-package=rich._unicode_data \
+            --include-package=imageio_ffmpeg \
+            --include-module=miniaudio \
+            --output-filename="PyAsciiFilm-v${VERSION}-macos_x64" \
             --output-dir=dist \
-            --include-data-files=setting.json=setting.json \
-            --include-data-files=LICENSE=LICENSE \
+            --lto=yes \
             src/main.py
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-macos-x64
-          path: dist/PyAsciiFilm
+          path: dist/PyAsciiFilm-*
 
   build-macos-arm64:
     runs-on: macos-latest
@@ -139,14 +184,21 @@ jobs:
           cache-dependency-path: requirements.txt
       - run: pip install nuitka ordered-set zstandard -r requirements.txt
       - run: |
-          nuitka --standalone --onefile \
-            --lto=yes \
-            --output-filename=PyAsciiFilm \
+          VERSION=$(cat version.txt | tr -d '[:space:]')
+          python -m nuitka \
+            --onefile \
+            --standalone \
+            --follow-imports \
+            --enable-plugin=tk-inter \
+            --include-package=textual \
+            --include-package=rich._unicode_data \
+            --include-package=imageio_ffmpeg \
+            --include-module=miniaudio \
+            --output-filename="PyAsciiFilm-v${VERSION}-macos_arm64" \
             --output-dir=dist \
-            --include-data-files=setting.json=setting.json \
-            --include-data-files=LICENSE=LICENSE \
+            --lto=yes \
             src/main.py
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-macos-arm64
-          path: dist/PyAsciiFilm
+          path: dist/PyAsciiFilm-*
