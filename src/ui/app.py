@@ -10,8 +10,8 @@ from textual.widgets import (
 from textual.containers import Vertical, Horizontal, ScrollableContainer
 
 from utils import _list_verified_decode_backends, _log
-from ascii_art import reload_charset, ASCII_CHARS
-from dialogs import SelectingScreen, select_output_path, _gui_available
+from core import reload_charset, ASCII_CHARS
+from .dialogs import SelectingScreen, select_output_path, _gui_available
 
 
 _EXPORTER = None
@@ -21,7 +21,7 @@ def _exporter():
     # 惰性加载导出模块
     global _EXPORTER
     if _EXPORTER is None:
-        from exporter import export_video, _load_mono_font, _MAX_CANVAS_W, _MAX_CANVAS_H, _ENCODER_MAX_SIZE
+        from export import export_video, _load_mono_font, _MAX_CANVAS_W, _MAX_CANVAS_H, _ENCODER_MAX_SIZE
         _EXPORTER = (export_video, _load_mono_font, _MAX_CANVAS_W, _MAX_CANVAS_H, _ENCODER_MAX_SIZE)
     return _EXPORTER
 
@@ -589,7 +589,7 @@ class ExportProgressScreen(Screen):
 
 def _probe_video(path):
     # 探测视频宽、高、帧率
-    from decoder import FrameReader
+    from core import FrameReader
     cap = FrameReader(path, log=lambda msg: None)
     w, h, fps = cap.width, cap.height, cap.fps
     cap.release()

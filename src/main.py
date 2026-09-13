@@ -13,7 +13,7 @@ _log(f"==== PyAsciiFilm 启动 ==== | Python {sys.version.split()[0]} | 平台 {
 
 def do_play(video_path, use_color, with_audio=True):
     # 退出 textual 后在原始终端播放
-    from playback import play_video
+    from ui import play_video
     _log(f"开始播放: {video_path} | 彩色={use_color} 音频={with_audio}")
     try:
         play_video(video_path, use_color=use_color, with_audio=with_audio)

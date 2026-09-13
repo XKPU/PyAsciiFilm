@@ -5,13 +5,12 @@ import time
 import shutil
 import cv2
 
-from ascii_art import (
+from core import (
     generate_grayscale_frame,
     generate_colored_frame,
+    start_audio,
+    FrameReader,
 )
-from audio import start_audio
-
-from decoder import FrameReader
 from utils import _log, _log_error
 
 

@@ -7,7 +7,7 @@ from textual.screen import Screen
 from textual.widgets import Static, Input
 
 from utils import _log, _log_error
-from ascii_art import (
+from core import (
     _read_config, _write_config_value,
     LAST_VIDEO_DIR_KEY, LAST_EXPORT_DIR_KEY,
 )

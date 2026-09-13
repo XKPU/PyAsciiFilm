@@ -11,8 +11,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from ascii_art import ASCII_CHARS, make_lookup
-from decoder import FrameReader
+from core import ASCII_CHARS, make_lookup, FrameReader
 from utils import (
     clean_fps,
     _forward_stderr, _ffmpeg_exe,
@@ -530,4 +529,3 @@ def _export_single(video_path, writer, output_path, target_w, target_h, target_f
            f"  帧数 {out_count} / 分辨率 {canvas_w}x{canvas_h} / 帧率 {target_fps:.2f}fps")
     log(msg.replace("\n", " | "))
     return True, msg
-
