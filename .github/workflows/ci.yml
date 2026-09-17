@@ -19,7 +19,6 @@ jobs:
           $VERSION = Get-Content version.txt -Raw
           $VERSION = $VERSION.Trim()
           python -m nuitka `
-            --onefile `
             --standalone `
             --follow-imports `
             --assume-yes-for-downloads `
@@ -37,10 +36,17 @@ jobs:
             --windows-file-version=$VERSION `
             --windows-product-version=$VERSION `
             src/main.py
+      - shell: pwsh
+        run: |
+          $distFolder = Get-ChildItem -Path dist -Directory -Filter "*.dist" | Select-Object -First 1
+          if ($distFolder) {
+            7z a -tzip -mx=9 "dist/$($distFolder.Name).zip" "$($distFolder.FullName)\*"
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-windows-x64
-          path: dist/*.exe
+          path: dist/*.dist.zip
+          compression-level: 0
 
   build-windows-arm64:
     runs-on: windows-latest
@@ -57,7 +63,6 @@ jobs:
           $VERSION = Get-Content version.txt -Raw
           $VERSION = $VERSION.Trim()
           python -m nuitka `
-            --onefile `
             --standalone `
             --follow-imports `
             --assume-yes-for-downloads `
@@ -76,10 +81,17 @@ jobs:
             --windows-file-version=$VERSION `
             --windows-product-version=$VERSION `
             src/main.py
+      - shell: pwsh
+        run: |
+          $distFolder = Get-ChildItem -Path dist -Directory -Filter "*.dist" | Select-Object -First 1
+          if ($distFolder) {
+            7z a -tzip -mx=9 "dist/$($distFolder.Name).zip" "$($distFolder.FullName)\*"
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-windows-arm64
-          path: dist/*.exe
+          path: dist/*.dist.zip
+          compression-level: 0
 
   build-linux-x64:
     runs-on: ubuntu-latest
@@ -94,7 +106,6 @@ jobs:
       - run: |
           VERSION=$(cat version.txt | tr -d '[:space:]')
           python -m nuitka \
-            --onefile \
             --standalone \
             --follow-imports \
             --assume-yes-for-downloads \
@@ -108,10 +119,16 @@ jobs:
             --output-dir=dist \
             --lto=yes \
             src/main.py
+      - run: |
+          distFolder=$(find dist -maxdepth 1 -type d -name "*.dist" | head -1)
+          if [ -n "$distFolder" ]; then
+            zip -9 "dist/$(basename $distFolder).zip" -r "$distFolder"/*
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-linux-x64
-          path: dist/PyAsciiFilm-*
+          path: dist/*.dist.zip
+          compression-level: 0
 
   build-linux-arm64:
     runs-on: ubuntu-24.04-arm
@@ -126,7 +143,6 @@ jobs:
       - run: |
           VERSION=$(cat version.txt | tr -d '[:space:]')
           python -m nuitka \
-            --onefile \
             --standalone \
             --follow-imports \
             --assume-yes-for-downloads \
@@ -140,10 +156,16 @@ jobs:
             --output-dir=dist \
             --lto=yes \
             src/main.py
+      - run: |
+          distFolder=$(find dist -maxdepth 1 -type d -name "*.dist" | head -1)
+          if [ -n "$distFolder" ]; then
+            zip -9 "dist/$(basename $distFolder).zip" -r "$distFolder"/*
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-linux-arm64
-          path: dist/PyAsciiFilm-*
+          path: dist/*.dist.zip
+          compression-level: 0
 
   build-macos-arm64:
     runs-on: macos-latest
@@ -158,21 +180,26 @@ jobs:
       - run: |
           VERSION=$(cat version.txt | tr -d '[:space:]')
           python -m nuitka \
-            --onefile \
             --standalone \
             --follow-imports \
             --assume-yes-for-downloads \
             --enable-plugin=tk-inter \
             --enable-cache \
-            --include-package=textual \
-            --include-package=rich._unicode_data \
-            --include-package=imageio_ffmpeg \
-            --include-module=miniaudio \
+            --include-package=textual `
+            --include-package=rich._unicode_data `
+            --include-package=imageio_ffmpeg `
+            --include-module=miniaudio `
             --output-filename="PyAsciiFilm-v${VERSION}-macos_arm64" \
             --output-dir=dist \
             --lto=yes \
             src/main.py
+      - run: |
+          distFolder=$(find dist -maxdepth 1 -type d -name "*.dist" | head -1)
+          if [ -n "$distFolder" ]; then
+            zip -9 "dist/$(basename $distFolder).zip" -r "$distFolder"/*
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-macos-arm64
-          path: dist/PyAsciiFilm-*
+          path: dist/*.dist.zip
+          compression-level: 0
