@@ -23,7 +23,6 @@ jobs:
             --follow-imports `
             --assume-yes-for-downloads `
             --enable-plugin=tk-inter `
-            --enable-cache `
             --include-package=textual `
             --include-package=rich._unicode_data `
             --include-package=imageio_ffmpeg `
@@ -67,7 +66,6 @@ jobs:
             --follow-imports `
             --assume-yes-for-downloads `
             --enable-plugin=tk-inter `
-            --enable-cache `
             --include-package=textual `
             --include-package=rich._unicode_data `
             --include-package=imageio_ffmpeg `
@@ -110,7 +108,6 @@ jobs:
             --follow-imports \
             --assume-yes-for-downloads \
             --enable-plugin=tk-inter \
-            --enable-cache \
             --include-package=textual \
             --include-package=rich._unicode_data \
             --include-package=imageio_ffmpeg \
@@ -147,7 +144,6 @@ jobs:
             --follow-imports \
             --assume-yes-for-downloads \
             --enable-plugin=tk-inter \
-            --enable-cache \
             --include-package=textual \
             --include-package=rich._unicode_data \
             --include-package=imageio_ffmpeg \
@@ -184,7 +180,6 @@ jobs:
             --follow-imports \
             --assume-yes-for-downloads \
             --enable-plugin=tk-inter \
-            --enable-cache \
             --include-package=textual `
             --include-package=rich._unicode_data `
             --include-package=imageio_ffmpeg `
