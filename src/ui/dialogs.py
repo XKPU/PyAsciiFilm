@@ -6,15 +6,14 @@ from textual.app import ComposeResult
 from textual.screen import Screen
 from textual.widgets import Static, Input
 
-from utils import _log, _log_error
-from core import (
+from utils.helpers import (
+    _log, _log_error,
     _read_config, _write_config_value,
-    LAST_VIDEO_DIR_KEY, LAST_EXPORT_DIR_KEY,
+    LAST_VIDEO_DIR_KEY, LAST_EXPORT_DIR_KEY, VIDEO_EXTS,
 )
 
 
 def _gui_available():
-    # 图形对话框是否可用（tkinter + 显示服务），否则回退文本输入
     if os.environ.get("PYASCIIFILM_NO_GUI"):
         return False
     if sys.platform == "win32":
@@ -23,7 +22,6 @@ def _gui_available():
             return True
         except Exception:
             return False
-    # 类 Unix 需要 X11 / Wayland 显示服务
     if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
         return False
     try:
@@ -32,16 +30,10 @@ def _gui_available():
     except Exception:
         return False
 
-_VIDEO_EXTS = [".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm",
-               ".m4v", ".mpg", ".mpeg", ".ts", ".m2ts", ".vob"]
-
-
-# 复用的 Tk 根窗口（避免反复初始化 Tcl/Tk）
 _TK_ROOT = None
 
 
 def _tk_root():
-    # 懒初始化并复用 Tk 根；失败则标记 False 不再重试
     global _TK_ROOT
     if _TK_ROOT is not None:
         return _TK_ROOT or None
@@ -61,7 +53,6 @@ def _tk_root():
 
 
 def _load_last_dir(key):
-    # 上次选择目录（无则空串）
     try:
         return _read_config().get(key) or ""
     except Exception:
@@ -69,7 +60,6 @@ def _load_last_dir(key):
 
 
 def _save_last_dir(key, path):
-    # 记录所选目录到配置
     try:
         if path and os.path.isdir(path):
             _write_config_value(key, path)
@@ -78,7 +68,6 @@ def _save_last_dir(key, path):
 
 
 def _split_initial(initial):
-    # 拆分初始路径为目录与文件名
     initialdir = None
     initialfile = None
     if initial and os.path.isfile(initial):
@@ -90,7 +79,6 @@ def _split_initial(initial):
 
 
 def _run_dialog(mode, initial=None, def_ext=None, default_dir=None):
-    # 弹出 tkinter 原生对话框，返回所选路径或 None（取消/失败）
     if not _gui_available():
         return None
     from tkinter import filedialog
@@ -112,7 +100,7 @@ def _run_dialog(mode, initial=None, def_ext=None, default_dir=None):
                 filetypes=filetypes,
             )
         else:
-            ext_pat = " ".join("*" + e for e in _VIDEO_EXTS)
+            ext_pat = " ".join("*" + e for e in VIDEO_EXTS)
             filetypes = [("视频文件", ext_pat), ("所有文件", "*.*")]
             path = filedialog.askopenfilename(
                 title="请选择视频",
@@ -127,7 +115,6 @@ def _run_dialog(mode, initial=None, def_ext=None, default_dir=None):
 
 
 def select_video_path(initial=None):
-    # 选择视频，返回路径或 None
     _log(f"视频选择：打开对话框，initial = {initial!r}")
     default_dir = _load_last_dir(LAST_VIDEO_DIR_KEY) or os.getcwd()
     result = _run_dialog("open", initial, default_dir=default_dir)
@@ -140,7 +127,6 @@ def select_video_path(initial=None):
 
 
 def select_output_path(initial=None, def_ext=None):
-    # 选择导出输出路径，返回路径或 None
     _log(f"导出输出选择：打开对话框，initial = {initial!r}, def_ext = {def_ext!r}")
     default_dir = (_load_last_dir(LAST_EXPORT_DIR_KEY)
                    or _load_last_dir(LAST_VIDEO_DIR_KEY)
@@ -159,6 +145,7 @@ class SelectingScreen(Screen):
     Screen { align: center middle; }
     #msg { width: auto; height: auto; text-style: bold; }
     #path { width: 60; }
+    #hint { color: $text-muted; text-style: bold; height: 1; margin: 1 0 0 0; }
     """
 
     def __init__(self, initial=None, on_done=None):
@@ -172,6 +159,7 @@ class SelectingScreen(Screen):
             yield Static("当前环境无图形文件对话框，请直接输入视频路径：", id="msg")
             yield Input(value=self._initial or "", id="path",
                         placeholder="输入视频路径后回车，Esc 取消")
+            yield Static("Enter 确认路径 | Esc 取消", id="hint")
         else:
             yield Static("请选择视频…", id="msg")
 
@@ -198,9 +186,16 @@ class SelectingScreen(Screen):
             pass
 
     def _pick(self):
-        path = None
-        try:
-            path = select_video_path(self._initial)
-        finally:
-            if self._on_done:
-                self._on_done(path)
+        """打开文件浏览器（Textual 原生）"""
+        from .filebrowser.main import VideoFileBrowser
+        browser = VideoFileBrowser(initial=self._initial)
+
+        def _on_browser_result(path: str | None) -> None:
+            if path:
+                _save_last_dir(LAST_VIDEO_DIR_KEY, os.path.dirname(path))
+                _log(f"视频选择（文件浏览器）：返回 {path!r}")
+            else:
+                _log("视频选择（文件浏览器）：已取消")
+            self._finish(path)
+
+        self.app.push_screen(browser, callback=_on_browser_result)

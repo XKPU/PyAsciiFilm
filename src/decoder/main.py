@@ -5,20 +5,17 @@ import time
 
 import cv2
 import numpy as np
-from utils import (
+from utils.helpers import (
     clean_fps,
     _forward_stderr, _ffmpeg_exe, _probe_hw_accel,
     _CREATE_NO_WINDOW, _log, _decode_threads,
 )
 
 
-# 视频帧读取器：cv2 优先，失败回退 ffmpeg 管道
-
 _FPS_FLAG = None
 
 
 def _fps_flag():
-    # 帧率直通参数
     global _FPS_FLAG
     if _FPS_FLAG is not None:
         return _FPS_FLAG
@@ -40,6 +37,7 @@ def _fps_flag():
 
 
 class FrameReader:
+    """视频帧读取器：cv2 优先，失败回退 ffmpeg 管道"""
 
     def __init__(self, video_path, log=None, force_ffmpeg=False, force_size=None,
                  metadata=None, hwaccel=True, decode_args=None, ffmpeg_usage=None):
@@ -72,7 +70,6 @@ class FrameReader:
             self._open()
 
     def _open(self):
-        # 尝试用 cv2 打开
         if not self._force:
             cap = cv2.VideoCapture(self.path)
             if cap.isOpened():
@@ -95,7 +92,6 @@ class FrameReader:
         self._open_ffmpeg()
 
     def _open_ffmpeg(self):
-        # 回退到 ffmpeg 管道解码
         ff = _ffmpeg_exe()
         if not ff:
             raise RuntimeError(
@@ -131,7 +127,6 @@ class FrameReader:
         self._launch_ffmpeg()
 
     def _launch_ffmpeg(self, seek_seconds=0):
-        # 启动 ffmpeg 解码管道
         ff = _ffmpeg_exe()
         if self._decode_args:
             candidates = [self._decode_args, None]
@@ -178,7 +173,6 @@ class FrameReader:
         self._frame_bytes = w * h * 3
 
     def _probe_with_ffmpeg(self, ff):
-        # ffmpeg 探测视频元信息
         try:
             res = subprocess.run(
                 [ff, "-hide_banner", "-i", self.path],
@@ -190,8 +184,7 @@ class FrameReader:
         except Exception:
             txt = ""
 
-        if txt:
-            w = h = 0
+        w = h = 0
         m = re.search(r"Stream.*?Video.*?(\d{2,})x(\d{2,})", txt)
         if m:
             w, h = int(m.group(1)), int(m.group(2))
@@ -224,7 +217,6 @@ class FrameReader:
         return w, h, fps, n, dur
 
     def read(self):
-        # 读取一帧
         if self._cv2 is not None:
             return self._cv2.read()
         raw = self._proc.stdout.read(self._frame_bytes)
@@ -234,7 +226,6 @@ class FrameReader:
         return True, frame
 
     def seek(self, frame_no):
-        # 跳转到指定帧
         frame_no = max(0, min(int(frame_no), max(0, self.frame_count - 1)))
         if self._cv2 is not None:
             try:
@@ -248,7 +239,6 @@ class FrameReader:
         return True
 
     def _kill_proc(self):
-        # 终止 ffmpeg 子进程
         if self._proc is None:
             return
         try:
@@ -269,7 +259,6 @@ class FrameReader:
         self._proc = None
 
     def release(self):
-        # 释放资源
         if self._cv2 is not None:
             try:
                 self._cv2.release()
@@ -290,7 +279,3 @@ class FrameReader:
             except Exception:
                 pass
             self._proc = None
-
-    @property
-    def is_opened(self):
-        return self._cv2 is not None or self._proc is not None

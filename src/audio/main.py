@@ -1,10 +1,9 @@
-# 后台音频播放（miniaudio 替代 sounddevice）
+# 后台音频播放（miniaudio）
 import threading
 import time
 
-from utils import _default_log, _forward_stderr, _ffmpeg_exe, _CREATE_NO_WINDOW, _log, _log_error
+from utils.helpers import _default_log, _forward_stderr, _ffmpeg_exe, _CREATE_NO_WINDOW, _log, _log_error
 
-# 统一解码为固定采样率/声道
 _CHANNELS = 2
 _BUFFER_MS = 120
 
@@ -12,8 +11,6 @@ _SYS_SAMPLE_RATE = None
 
 
 def _system_sample_rate():
-    # WASAPI 共享模式使用统一混音采样率；让 ffmpeg 与 miniaudio 都用此速率，
-    # 避免与 ffmpeg -ar 叠加成双重重采样（高频丢失、声音发闷）
     global _SYS_SAMPLE_RATE
     if _SYS_SAMPLE_RATE is not None:
         return _SYS_SAMPLE_RATE
@@ -34,9 +31,7 @@ def _system_sample_rate():
     return rate
 
 
-
 def start_audio(video_path, log=None):
-    # 后台流式播放音轨
     ffmpeg = _ffmpeg_exe()
     if not ffmpeg:
         _log("音频初始化跳过：未找到 ffmpeg")
@@ -79,7 +74,6 @@ def start_audio(video_path, log=None):
         nbytes_per_frame = _CHANNELS * 4
 
         def gen():
-            # miniaudio 生成器回调：send(framecount) 进，yield 等长 float32 字节
             framecount = yield
             while True:
                 if stop_event.is_set():

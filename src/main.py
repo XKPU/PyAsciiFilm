@@ -1,22 +1,59 @@
 # 程序入口
 import os
 import sys
+import threading
+import asyncio
 import traceback
 
-from utils import _clear_log, _log, _log_error, _app_dir
+from utils.helpers import _clear_log, _log, _log_error, _app_dir
 
-# 清空并初始化日志文件
 _clear_log()
 _LOG_FILE = os.path.join(_app_dir(), "pyasciifilm.log")
 _log(f"==== PyAsciiFilm 启动 ==== | Python {sys.version.split()[0]} | 平台 {sys.platform}")
 
 
-def do_play(video_path, use_color, with_audio=True):
-    # 退出 textual 后在原始终端播放
-    from ui import play_video
-    _log(f"开始播放: {video_path} | 彩色={use_color} 音频={with_audio}")
+_ORIG_EXCEPTHOOK = sys.excepthook
+
+
+def _global_excepthook(exc_type, exc_value, exc_tb):
+    msg = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    _log_error(f"未捕获异常:\n{msg}")
+    if _ORIG_EXCEPTHOOK is not None and _ORIG_EXCEPTHOOK != _global_excepthook:
+        _ORIG_EXCEPTHOOK(exc_type, exc_value, exc_tb)
+
+
+sys.excepthook = _global_excepthook
+
+_ORIG_THREAD_EXCEPTHOOK = threading.excepthook
+
+
+def _thread_excepthook(args):
+    msg = "".join(traceback.format_exception(args.exc_type, args.exc_value, args.exc_traceback))
+    _log_error(f"线程未捕获异常:\n{msg}")
+    if _ORIG_THREAD_EXCEPTHOOK is not None and _ORIG_THREAD_EXCEPTHOOK != _thread_excepthook:
+        _ORIG_THREAD_EXCEPTHOOK(args)
+
+
+threading.excepthook = _thread_excepthook
+
+
+def _asyncio_excepthook(loop, context):
+    msg = context.get("message", "未知 asyncio 错误")
+    exc = context.get("exception")
+    if exc:
+        msg += f"\n{''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))}"
+    _log_error(f"asyncio 异常: {msg}")
+
+
+def do_play(video_path, use_color, with_audio=True,
+            target_fps=None, decode_args=None, ffmpeg_usage=None):
+    from playback.main import play_video
+    _log(f"开始播放: {video_path} | 彩色={use_color} 音频={with_audio}"
+         f" | 目标帧率={target_fps} | 解码={decode_args} | CPU占用={ffmpeg_usage}")
     try:
-        play_video(video_path, use_color=use_color, with_audio=with_audio)
+        play_video(video_path, use_color=use_color, with_audio=with_audio,
+                   target_fps=target_fps, decode_args=decode_args,
+                   ffmpeg_usage=ffmpeg_usage)
     except Exception as e:
         _log_error(f"播放异常: {e}")
         print(f"\n[错误] 播放过程中发生异常: {e}")
@@ -25,23 +62,44 @@ def do_play(video_path, use_color, with_audio=True):
 
 
 def main():
-    # 主循环
-    from ui import MenuApp
+    try:
+        asyncio.get_running_loop().set_exception_handler(_asyncio_excepthook)
+    except RuntimeError:
+        pass
+
+    from ui.main import MenuApp
 
     while True:
-        result = MenuApp().run()
+        try:
+            result = MenuApp().run()
+        except Exception as e:
+            _log_error(f"Textual 应用崩溃: {e}\n{traceback.format_exc()}")
+            print(f"\n[错误] 程序异常退出: {e}", file=sys.stderr)
+            return
 
-        if result == "quit" or result is None:
-            _log("用户退出")
+        if result is None:
+            _log_error("程序异常终止（未获得退出结果）")
+            return
+
+        if isinstance(result, str):
+            if result == "quit":
+                _log("用户退出")
+                return
+            _log_error(f"程序异常终止（未知退出码: {result!r})")
             return
 
         if isinstance(result, tuple) and result[0] == "play":
-            _, use_color, video_path = result
+            _, use_color, video_path = result[0], result[1], result[2]
+            target_fps = result[3] if len(result) > 3 else None
+            decode_args = result[4] if len(result) > 4 else None
+            ffmpeg_usage = result[5] if len(result) > 5 else None
             if not video_path:
                 _log("未选择视频，返回菜单")
                 continue
             _log(f"已选择视频: {video_path}")
-            do_play(video_path, use_color=use_color, with_audio=True)
+            do_play(video_path, use_color=use_color, with_audio=True,
+                    target_fps=target_fps, decode_args=decode_args,
+                    ffmpeg_usage=ffmpeg_usage)
             continue
 
         return
@@ -51,7 +109,6 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        # 致命异常写日志与控制台
         _log_error(f"致命异常: {e}\n{traceback.format_exc()}")
         print(f"[致命错误] {e}\n详见日志: {_LOG_FILE}", file=sys.stderr)
         traceback.print_exc()

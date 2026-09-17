@@ -1,18 +1,20 @@
 # 共享基础设施
+import json
 import logging
 import math
 import os
+import string
 import subprocess
 import sys
 import threading
+from datetime import datetime
+from pathlib import Path
 
 
-# Windows 隐藏子进程控制台窗口；非 Windows 用 0（creationflags 被忽略）
 _CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def _cpu_count():
-    # 逻辑 CPU 核心数（≥1）
     try:
         n = os.cpu_count() or 1
     except Exception:
@@ -20,12 +22,10 @@ def _cpu_count():
     return max(1, n)
 
 
-# ffmpeg 合计核心占用上限（两进程），默认 35%
 _FFMPEG_MAX_USAGE = 35
 
 
 def _set_ffmpeg_max_usage(pct):
-    # 设 ffmpeg 合计占用上限（1~100）
     global _FFMPEG_MAX_USAGE
     try:
         p = int(pct)
@@ -35,7 +35,6 @@ def _set_ffmpeg_max_usage(pct):
 
 
 def _ffmpeg_usage_threads(usage=None):
-    # 合计占用 -> 两进程总线程数（向上取整）
     pct = usage if usage is not None else _FFMPEG_MAX_USAGE
     try:
         pct = max(1, min(100, int(pct)))
@@ -45,32 +44,26 @@ def _ffmpeg_usage_threads(usage=None):
 
 
 def _encode_threads(usage=None):
-    # 编码线程数：合计的 75%（≥1）
     return max(1, int(round(_ffmpeg_usage_threads(usage) * 0.75)))
 
 
 def _decode_threads(usage=None):
-    # 解码线程数：合计剩余（≥1）
     return max(1, _ffmpeg_usage_threads(usage) - _encode_threads(usage) + 1)
 
 
 def _app_dir():
-    # 程序目录：打包用 exe 同目录，源码用启动 CWD
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
     return os.getcwd()
 
 
-# ---------------------------------------------------------------------------
-# 持久日志文件（程序目录，启动即清空）
-# ---------------------------------------------------------------------------
+# ---- 文件日志 ----
 _LOG_PATH = os.path.join(_app_dir(), "pyasciifilm.log")
 _LOG_LOCK = threading.Lock()
 _LOGGER = None
 
 
 def _init_logger():
-    # 惰性配置全局 logger（仅写文件）
     global _LOGGER
     if _LOGGER is not None:
         return _LOGGER
@@ -92,7 +85,7 @@ def _init_logger():
 
 
 def _clear_log():
-    # 启动时清空日志
+    """启动时清空日志文件"""
     try:
         with open(_LOG_PATH, "w", encoding="utf-8") as f:
             f.write("")
@@ -101,9 +94,15 @@ def _clear_log():
 
 
 def _log(msg, level=logging.INFO):
-    # 写一行日志
+    """文件日志（受 EnableFileLog 配置控制）"""
     if not isinstance(msg, str):
         msg = str(msg)
+    try:
+        cfg = _read_config()
+        if not cfg.get("EnableFileLog", False):
+            return
+    except Exception:
+        return
     try:
         with _LOG_LOCK:
             _init_logger().log(level, msg)
@@ -112,12 +111,10 @@ def _log(msg, level=logging.INFO):
 
 
 def _log_error(msg):
-    # 错误级日志
     _log(msg, level=logging.ERROR)
 
 
 def _default_log(msg):
-    # 默认日志：转发 stderr
     try:
         print(msg, file=sys.stderr)
     except Exception:
@@ -125,7 +122,6 @@ def _default_log(msg):
 
 
 def clean_fps(fps):
-    # 帧率收拢为名义整数
     if fps is None or fps <= 0:
         return 30.0
     r = round(fps)
@@ -134,14 +130,11 @@ def clean_fps(fps):
     return float(fps)
 
 
-# ---------------------------------------------------------------------------
-# ffmpeg 路径
-# ---------------------------------------------------------------------------
+# ---- ffmpeg ----
 _FFMPEG = None
 
 
 def _ffmpeg_exe():
-    # 返回随包 ffmpeg 路径；不可用返回 None
     global _FFMPEG
     if _FFMPEG is not None:
         return _FFMPEG
@@ -153,11 +146,7 @@ def _ffmpeg_exe():
     return _FFMPEG or None
 
 
-# ---------------------------------------------------------------------------
-# 子进程 stderr 转发
-# ---------------------------------------------------------------------------
 def _forward_stderr(proc, log):
-    # 后台逐行转发子进程 stderr 给 log
     if getattr(proc, "stderr", None) is None:
         return
 
@@ -180,14 +169,11 @@ def _forward_stderr(proc, log):
     threading.Thread(target=_pump, daemon=True).start()
 
 
-# ---------------------------------------------------------------------------
-# 硬件加速探测
-# ---------------------------------------------------------------------------
+# ---- 硬件加速 ----
 _HW_ACCEL = None
 
 
 def _validate_encoder(ff, encoder, extra_args, w=160, h=120):
-    # 编码 1 帧验证编码器可用性
     cmd = [ff, "-y", "-hide_banner", "-loglevel", "error",
            "-f", "rawvideo", "-pix_fmt", "yuv420p",
            "-s", f"{w}x{h}", "-r", "24", "-i", "-",
@@ -204,7 +190,6 @@ def _validate_encoder(ff, encoder, extra_args, w=160, h=120):
 
 
 def _probe_hw_accel():
-    # 探测可用硬件加速后端（缓存）
     global _HW_ACCEL
     if _HW_ACCEL is not None:
         return _HW_ACCEL
@@ -232,7 +217,8 @@ def _probe_hw_accel():
                             text=True, timeout=5,
                             creationflags=_CREATE_NO_WINDOW)
         for line in (r.stdout or "").splitlines():
-            for name in ("h264_nvenc", "h264_qsv", "h264_amf"):
+            for name in ("h264_nvenc", "h264_qsv", "h264_amf",
+                         "h264_vaapi", "h264_videotoolbox"):
                 if name in line:
                     listed_encoders.add(name)
     except Exception:
@@ -249,6 +235,10 @@ def _probe_hw_accel():
         decode.append(("-hwaccel", "dxva2"))
     if "qsv" in hwaccels:
         decode.append(("-hwaccel", "qsv"))
+    if "vaapi" in hwaccels:
+        decode.append(("-hwaccel", "vaapi"))
+    if "videotoolbox" in hwaccels:
+        decode.append(("-hwaccel", "videotoolbox"))
 
     encode_h264 = []
     _H264_CANDIDATES = [
@@ -256,6 +246,8 @@ def _probe_hw_accel():
                          "-pix_fmt", "yuv420p"]),
         ("h264_qsv",   ["-pix_fmt", "yuv420p"]),
         ("h264_amf",   ["-pix_fmt", "yuv420p"]),
+        ("h264_vaapi", ["-vf", "format=nv12,hwupload", "-pix_fmt", "vaapi"]),
+        ("h264_videotoolbox", ["-allow_sw", "1", "-pix_fmt", "yuv420p"]),
     ]
     for enc_name, enc_params in _H264_CANDIDATES:
         if enc_name in listed_encoders and _validate_encoder(ff, enc_name, enc_params):
@@ -265,11 +257,8 @@ def _probe_hw_accel():
     return _HW_ACCEL
 
 
-# ---------------------------------------------------------------------------
-# 解码后端运行时验证
-# ---------------------------------------------------------------------------
+# ---- 解码后端验证 ----
 def _verify_decode_backend(decode_args):
-    # 解码 1 帧测试视频验证解码后端可用性
     if not decode_args:
         return True
     ff = _ffmpeg_exe()
@@ -310,7 +299,6 @@ def _verify_decode_backend(decode_args):
 
 
 def _list_verified_decode_backends():
-    # 经验证可用的解码后端列表
     hw = _probe_hw_accel()
     result = []
     _LABELS = {
@@ -319,8 +307,11 @@ def _list_verified_decode_backends():
         "d3d11va": "D3D11VA",
         "dxva2": "DXVA2",
         "qsv": "QSV (Intel)",
+        "vaapi": "VAAPI (Linux)",
+        "videotoolbox": "VideoToolbox (macOS)",
     }
-    _PRIORITY = {"cuda": 0, "dxva2": 10, "d3d11va": 11, "d3d12va": 12, "qsv": 13}
+    _PRIORITY = {"cuda": 0, "dxva2": 10, "d3d11va": 11, "d3d12va": 12, "qsv": 13,
+                 "vaapi": 14, "videotoolbox": 15}
     for args in hw["decode"]:
         name = args[-1]
         label = _LABELS.get(name, name.upper())
@@ -331,3 +322,179 @@ def _list_verified_decode_backends():
     cuda = [item for item in hw_items if "CUDA" in item[0].upper()]
     others = [item for item in hw_items if "CUDA" not in item[0].upper()]
     return cuda + others + [("软件解码", None)]
+
+
+# ---- 视频文件类型 ----
+VIDEO_EXTS = frozenset({
+    ".mp4", ".avi", ".mkv", ".mov", ".wmv", ".flv", ".webm",
+    ".m4v", ".mpg", ".mpeg", ".ts", ".m2ts", ".vob",
+})
+
+
+def is_video_file(name):
+    """检查文件名是否为支持的视频格式"""
+    _, ext = os.path.splitext(name)
+    return ext.lower() in VIDEO_EXTS
+
+
+# ---- 文件系统工具 ----
+def user_dirs():
+    """返回用户目录快捷访问列表：[(显示名, 路径), ...]（三平台）"""
+    home = Path.home()
+    candidates = [
+        ("桌面", home / "Desktop"),
+        ("下载", home / "Downloads"),
+        ("视频", home / "Videos"),
+        ("文档", home / "Documents"),
+        ("音乐", home / "Music"),
+        ("图片", home / "Pictures"),
+    ]
+    if sys.platform == "darwin":
+        candidates[2] = ("视频", home / "Movies")
+    return [(name, str(p)) for name, p in candidates if p.is_dir()]
+
+
+
+def list_drives():
+    """枚举可用驱动器 / 挂载点（三平台）"""
+    if sys.platform == "win32":
+        drives = []
+        for letter in string.ascii_uppercase:
+            root = f"{letter}:\\"
+            if os.path.isdir(root):
+                drives.append((root, root))
+        return drives
+    result = [("/", "/")]
+    if sys.platform == "linux":
+        for base in ("/media", "/mnt"):
+            if os.path.isdir(base):
+                try:
+                    for entry in os.scandir(base):
+                        if entry.is_dir(follow_symlinks=False):
+                            result.append((entry.name, entry.path))
+                except PermissionError:
+                    pass
+    elif sys.platform == "darwin":
+        volumes = Path("/Volumes")
+        if volumes.is_dir():
+            try:
+                for entry in volumes.iterdir():
+                    if entry.is_dir():
+                        result.append((entry.name, str(entry)))
+            except PermissionError:
+                pass
+    return result
+
+
+def sorted_entries(path, video_only=False, hide_hidden=False):
+    """列出目录内容，目录在前、文件在后，各自按字母序。
+    返回 (dirs, files)，每项为 (sort_key, name, is_dir)。
+    video_only=True 时只返回视频文件。
+    hide_hidden=True 时隐藏以 . 开头的文件/目录。"""
+    try:
+        entries = list(os.scandir(path))
+    except PermissionError:
+        return [], []
+    except OSError:
+        return [], []
+
+    dirs, files = [], []
+    for entry in entries:
+        try:
+            if hide_hidden and entry.name.startswith("."):
+                continue
+            if entry.is_dir(follow_symlinks=False):
+                dirs.append((entry.name.lower(), entry.name, True))
+            elif entry.is_file(follow_symlinks=False):
+                if not video_only or is_video_file(entry.name):
+                    files.append((entry.name.lower(), entry.name, False))
+        except OSError:
+            continue
+
+    dirs.sort(key=lambda x: x[0])
+    files.sort(key=lambda x: x[0])
+    return dirs, files
+
+
+# ---- 格式化工具 ----
+def format_file_size(size_bytes):
+    """将字节数转换为人类可读的文件大小"""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    else:
+        return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+
+def format_datetime_ts(timestamp):
+    """将时间戳格式化为 YYYY-MM-DD HH:MM:SS"""
+    try:
+        return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return "未知"
+
+
+# ---- 配置文件 ----
+CONFIG_FILE = os.path.join(_app_dir(), "setting.json")
+
+_DEFAULT_CONFIG = {
+    "EnableFileLog": False,
+    "CharSets": {
+        "ASCII_CHARS_10": " .:-=+*#%@",
+        "ASCII_CHARS_16": " .\"!~])txzOp*8$",
+        "ASCII_CHARS_32": " .`\";!>~?[)|/frncXUCQOqjka*W8B$",
+        "ASCII_CHARS_70": " .'`^\":;Il!i><~+-?][}{)(|\\/tfjrxnuvczXYUJCLQOZwmpqdjbkhao*#MW&8%B@$",
+        "ASCII_CHARS_NUMERIC": " 0123456789",
+        "ASCII_CHARS_BLOCK": " ░▒▓█"
+    },
+    "Charset": "ASCII_CHARS_10"
+}
+
+LAST_VIDEO_DIR_KEY = "LastVideoDir"
+LAST_EXPORT_DIR_KEY = "LastExportDir"
+
+
+def _ensure_config():
+    if not os.path.isfile(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(_DEFAULT_CONFIG, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+
+def load_charset():
+    _ensure_config()
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            config = json.load(f)
+            selected = config.get("Charset", "ASCII_CHARS_10")
+            charsets = config.get("CharSets", {})
+            if selected in charsets:
+                return charsets[selected]
+            return next(iter(charsets.values()), " .:-=+*#%@")
+    except (FileNotFoundError, json.JSONDecodeError):
+        return " .:-=+*#%@"
+
+
+def _read_config():
+    _ensure_config()
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _write_config_value(key, value):
+    cfg = _read_config()
+    cfg[key] = value
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass

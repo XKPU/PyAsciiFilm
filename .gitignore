@@ -25,7 +25,12 @@ Thumbs.db
 # Environment
 .env
 
+# Update
+.md
+
 # tast
+test/
+tests/
 test.bat
 setting.json
 pyasciifilm.log
