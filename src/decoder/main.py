@@ -146,7 +146,7 @@ class FrameReader:
                 cmd += ["-ss", f"{seek_seconds:.3f}"]
             cmd += ["-i", self.path] + _fps_flag()
             if self._scale_w > 0 and self._scale_h > 0:
-                cmd += ["-vf", f"scale={self._scale_w}:{self._scale_h}:flags=area"]
+                cmd += ["-vf", f"scale={self._scale_w}:{self._scale_h}:flags=neighbor"]
             cmd += ["-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
             kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE,
                       "creationflags": _CREATE_NO_WINDOW}
