@@ -338,7 +338,7 @@ class ExportSettingsScreen(Screen):
             "w": cw, "h": ch, "fps": fps, "out": out_path,
             "color": color, "fmt": self.fmt, "hwaccel": hwaccel,
             "ffmpeg_usage": usage,
-        }), callback=lambda _: self.app.pop_screen())
+        }))
 
     def _shortcut(self, widget_id: str) -> Static:
         text = _EXPORT_INLINE.get(widget_id, "")

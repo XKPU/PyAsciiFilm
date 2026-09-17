@@ -37,6 +37,7 @@ class ExportProgressScreen(Screen):
         self.params = params
         self._cancel = threading.Event()
         self._export_done = False
+        self._dismissed = False
 
     def compose(self) -> ComposeResult:
         yield Vertical(
@@ -62,8 +63,12 @@ class ExportProgressScreen(Screen):
             pass
 
     def _request_exit(self):
+        if self._dismissed:
+            return
+        self._dismissed = True
         self._cancel.set()
-        self.dismiss()
+        self.app.pop_screen()
+        self.app.pop_screen()
 
     def _worker(self):
         out_base = os.path.splitext(self.params["out"])[0] + "." + self.params["fmt"]
