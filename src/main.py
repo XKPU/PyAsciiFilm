@@ -47,6 +47,8 @@ def _asyncio_excepthook(loop, context):
 
 def do_play(video_path, use_color, with_audio=True,
             target_fps=None, decode_args=None, ffmpeg_usage=None):
+    from core.main import reload_charset
+    reload_charset()
     from playback.main import play_video
     _log(f"开始播放: {video_path} | 彩色={use_color} 音频={with_audio}"
          f" | 目标帧率={target_fps} | 解码={decode_args} | CPU占用={ffmpeg_usage}")

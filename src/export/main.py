@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import time
 
-from core.main import ASCII_CHARS, make_lookup
+from core.main import ASCII_CHARS, make_lookup, reload_charset
 from decoder.main import FrameReader
 from utils.helpers import (
     clean_fps, _forward_stderr, _ffmpeg_exe,
@@ -40,6 +40,10 @@ def export_video(video_path, output_path, target_w, target_h, target_fps,
                  use_color=False, fmt="mp4", on_progress=None, on_done=None,
                  on_log=None, hwaccel=True, ffmpeg_usage=None, cancel=None):
     """单遍导出：边解码边按目标帧率抽样、逐帧渲染编码"""
+    global ASCII_CHARS, _GRAY_LOOKUP
+    ASCII_CHARS = reload_charset()
+    _GRAY_LOOKUP = make_lookup(ASCII_CHARS)
+
     decode_args = None
     if isinstance(hwaccel, dict):
         decode_args = hwaccel.get("decode_args")
@@ -69,8 +73,8 @@ def export_video(video_path, output_path, target_w, target_h, target_fps,
     interval = max(1.0, src_fps / max(0.1, target_fps))
     est_total = max(1, int(round(src_count / interval))) if src_count > 0 else None
 
-    font, cell_w, cell_h = _load_mono_font(ASCII_CHARS)
-    atlas, tile_w, tile_h, char_to_idx = _build_glyph_atlas(font, cell_w, cell_h, ASCII_CHARS)
+    font, cell_w, cell_h, y_offset = _load_mono_font(ASCII_CHARS)
+    atlas, tile_w, tile_h, char_to_idx = _build_glyph_atlas(font, cell_w, cell_h, ASCII_CHARS, y_offset)
     canvas_w = target_w * tile_w
     canvas_h = target_h * tile_h
     canvas_w += canvas_w % 2

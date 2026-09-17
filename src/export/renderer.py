@@ -62,25 +62,34 @@ def _load_mono_font(charset=None):
     cell_w = float(font.getlength("M"))
     ascent, descent = font.getmetrics()
     try:
+        min_top = 0
         max_bottom = 0
         for ch in (charset or ""):
             bbox = font.getbbox(ch)
-            if bbox and bbox[3] > max_bottom:
-                max_bottom = bbox[3]
-        if max_bottom > 0:
-            cell_h = float(max_bottom)
+            if bbox:
+                if bbox[1] < min_top:
+                    min_top = bbox[1]
+                if bbox[3] > max_bottom:
+                    max_bottom = bbox[3]
+        if max_bottom > 0 or min_top < 0:
+            cell_h = float(max_bottom - min_top)
+            y_offset = float(-min_top)
         else:
             cell_h = float(ascent + descent)
+            y_offset = 0.0
     except Exception:
         cell_h = float(ascent + descent)
+        y_offset = 0.0
     if cell_w <= 0 or cell_h <= 0:
         cell_w, cell_h = 10.0, 20
-    return font, cell_w, cell_h
+        y_offset = 0.0
+    return font, cell_w, cell_h, y_offset
 
 
-def _build_glyph_atlas(font, cell_w, cell_h, chars):
+def _build_glyph_atlas(font, cell_w, cell_h, chars, y_offset=0.0):
     tile_w = max(1, int(math.ceil(cell_w)))
     tile_h = max(1, int(math.ceil(cell_h)))
+    y_off = int(math.floor(y_offset))
     uniq = list(dict.fromkeys(chars))
     if " " not in uniq:
         uniq.insert(0, " ")
@@ -88,7 +97,7 @@ def _build_glyph_atlas(font, cell_w, cell_h, chars):
     atlas = np.zeros((G, tile_h, tile_w), dtype=np.uint8)
     for i, ch in enumerate(uniq):
         img = Image.new("L", (tile_w, tile_h), 0)
-        ImageDraw.Draw(img).text((0, 0), ch, fill=255, font=font)
+        ImageDraw.Draw(img).text((0, y_off), ch, fill=255, font=font)
         atlas[i] = np.asarray(img, dtype=np.uint8)
     char_to_idx = {ch: i for i, ch in enumerate(uniq)}
     return atlas, tile_w, tile_h, char_to_idx
@@ -106,16 +115,18 @@ def _render_frame(char_grid, color_grid, atlas, tile_w, tile_h, char_to_idx, use
     luma = atlas[idx]
     luma = luma.swapaxes(1, 2).reshape(H, W)
 
+    luma_bin = np.where(luma >= 128, 255, 0).astype(np.uint8)
     if use_color and color_grid is not None:
         color_tiled = cv2.resize(color_grid, (W, H), interpolation=cv2.INTER_NEAREST)
-        rgb = (luma.astype(np.float32)[..., None]
-               * color_tiled.astype(np.float32) / 255.0 + 0.5).astype(np.uint8)
+        fg = luma_bin.astype(np.float32) / 255.0
+        bg = color_tiled.astype(np.float32)
+        rgb = (bg * (1.0 - fg[..., None] * 0.65) + 0.5).astype(np.uint8)
         cur = rgb[:, :, ::-1].copy()
     else:
         out = np.empty((H, W, 3), dtype=np.uint8)
-        out[..., 0] = luma
-        out[..., 1] = luma
-        out[..., 2] = luma
+        out[..., 0] = luma_bin
+        out[..., 1] = luma_bin
+        out[..., 2] = luma_bin
         cur = out
     if cur.shape[0] != canvas_h or cur.shape[1] != canvas_w:
         padded = np.zeros((canvas_h, canvas_w, 3), dtype=np.uint8)

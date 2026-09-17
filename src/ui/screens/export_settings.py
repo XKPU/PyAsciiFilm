@@ -49,7 +49,7 @@ class ExportSettingsScreen(Screen):
         self.video_path = video_path
         self.src_w, self.src_h, self.src_fps = 0, 0, 0.0
         try:
-            _, self.cell_w, self.cell_h = _exporter()[1](ASCII_CHARS)
+            _, self.cell_w, self.cell_h, _ = _exporter()[1](ASCII_CHARS)
         except Exception:
             self.cell_w, self.cell_h = 10, 20
         self.rec_w, self.rec_h = 160, 120
