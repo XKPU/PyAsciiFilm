@@ -5,11 +5,13 @@ import threading
 import asyncio
 import traceback
 
-from utils.helpers import _clear_log, _log, _log_error, _app_dir
+from utils.helpers import _clear_log, _log, _log_error, _app_dir, _init_ffmpeg
 
 _clear_log()
 _LOG_FILE = os.path.join(_app_dir(), "pyasciifilm.log")
 _log(f"==== PyAsciiFilm 启动 ==== | Python {sys.version.split()[0]} | 平台 {sys.platform}")
+
+_init_ffmpeg()
 
 
 _ORIG_EXCEPTHOOK = sys.excepthook

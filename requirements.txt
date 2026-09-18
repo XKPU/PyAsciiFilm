@@ -3,7 +3,7 @@ textual == 3.1.0
 
 # 视频
 numpy
-opencv-python-headless
+imageio
 imageio-ffmpeg
 pillow == 10.4.0
 

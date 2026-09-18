@@ -2,7 +2,6 @@
 import math
 import os
 
-import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
@@ -117,7 +116,7 @@ def _render_frame(char_grid, color_grid, atlas, tile_w, tile_h, char_to_idx, use
 
     luma_bin = np.where(luma >= 128, 255, 0).astype(np.uint8)
     if use_color and color_grid is not None:
-        color_tiled = cv2.resize(color_grid, (W, H), interpolation=cv2.INTER_NEAREST)
+        color_tiled = np.array(Image.fromarray(color_grid).resize((W, H), Image.NEAREST))
         fg = luma_bin.astype(np.float32) / 255.0
         bg = color_tiled.astype(np.float32)
         rgb = (bg * (1.0 - fg[..., None] * 0.65) + 0.5).astype(np.uint8)
@@ -139,14 +138,13 @@ def _small(frame, target_w, target_h):
     if frame.shape[1] == target_w and frame.shape[0] == target_h:
         resized = frame
     else:
-        resized = cv2.resize(frame, (target_w, target_h), interpolation=cv2.INTER_AREA)
-    gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
-    rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
-    return rgb, gray
+        resized = np.array(Image.fromarray(frame).resize((target_w, target_h), Image.BOX))
+    gray = np.array(Image.fromarray(resized).convert('L'))
+    return resized, gray
 
 
 def _grids_from_rgb(rgb, use_color, gray=None, gray_lookup=None):
-    lum = gray if gray is not None else cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY)
+    lum = gray if gray is not None else np.dot(rgb[..., :3], [0.299, 0.587, 0.114]).astype(np.uint8)
     if gray_lookup is None:
         from core.main import ASCII_CHARS, make_lookup
         gray_lookup = make_lookup(ASCII_CHARS)

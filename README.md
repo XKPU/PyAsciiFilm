@@ -16,7 +16,7 @@
 运行源码需要以下 Python 依赖：
 
 - `numpy`
-- `opencv-python-headless`/`opencv-python`
+- `imageio`
 - `pillow`
 - `imageio-ffmpeg`
 - `textual`

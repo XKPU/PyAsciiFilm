@@ -4,8 +4,8 @@ import sys
 import time
 import shutil
 
-import cv2
 import numpy as np
+from PIL import Image
 
 from audio.main import start_audio
 from core.main import generate_colored_frame, generate_grayscale_frame
@@ -19,9 +19,9 @@ _playback_logs = []
 def _frame_to_terminal_text(frame, width, use_color):
     aspect = frame.shape[0] / frame.shape[1]
     new_height = max(1, int(aspect * width * 0.5))
-    resized = cv2.resize(frame, (width, new_height))
+    resized = np.array(Image.fromarray(frame).resize((width, new_height), Image.NEAREST))
     if use_color:
-        pixels = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+        pixels = resized
         lum = (pixels[:, :, 0].astype(np.uint32) * 299
                + pixels[:, :, 1].astype(np.uint32) * 587
                + pixels[:, :, 2].astype(np.uint32) * 114
@@ -29,7 +29,7 @@ def _frame_to_terminal_text(frame, width, use_color):
         lum = lum.astype(np.uint8)
         frame_text = generate_colored_frame(pixels, lum)
     else:
-        gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+        gray = np.array(Image.fromarray(resized).convert('L'))
         frame_text = generate_grayscale_frame(gray)
     return "\n".join(line + "\033[K" for line in frame_text.split("\n"))
 

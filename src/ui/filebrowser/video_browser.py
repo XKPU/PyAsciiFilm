@@ -11,9 +11,9 @@ from textual.containers import Horizontal, Vertical
 from textual.events import Key
 
 from utils.helpers import (
-    _log, _log_error,
-    _read_config, _write_config_value,
-    is_video_file, user_dirs, list_drives, sorted_entries,
+    _log_error,
+    _write_config_value,
+    user_dirs, list_drives, sorted_entries,
     format_file_size, format_datetime_ts,
     LAST_VIDEO_DIR_KEY, VIDEO_EXTS,
 )
@@ -49,7 +49,7 @@ class VideoFileBrowser(Screen, BrowserNav):
         elif initial and os.path.isdir(initial):
             self._current_path = initial
         else:
-            last = _load_last_dir("last_video_dir")
+            last = _load_last_dir()
             try:
                 self._current_path = last if last and os.path.isdir(last) else os.path.expanduser("~")
             except Exception:

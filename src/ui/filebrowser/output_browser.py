@@ -11,18 +11,18 @@ from textual.containers import Horizontal, Vertical
 from textual.events import Key
 
 from utils.helpers import (
-    _log, _log_error,
-    _read_config, _write_config_value,
-    sorted_entries, format_file_size as _format_file_size,
+    _log_error,
+    _write_config_value,
+    sorted_entries,
     format_datetime_ts as _format_datetime_ts,
-    is_video_file, user_dirs as _user_dirs, list_drives as _list_drives,
+    user_dirs as _user_dirs, list_drives as _list_drives,
     VIDEO_EXTS,
     LAST_EXPORT_DIR_KEY,
 )
 from ..widgets import KeyBar, safe_notify
 from .browser_nav import BrowserNav
 from .browser_config import ODB_CSS, ODB_ID_TO_ZONE, ODB_ZONE_HINTS
-from ..screens._helpers import _format_duration, _probe_video_metadata, _load_last_export_dir
+from ..screens._helpers import _load_last_export_dir
 
 
 def _safe_id(name: str) -> str:
@@ -355,9 +355,6 @@ class OutputDirBrowser(Screen, BrowserNav):
 
     # 驱动器列表视图的哨兵路径
     _DRIVES_SENTINEL = "Drives:\\"
-
-    def _is_drive_root(self) -> bool:
-        return self._current_path == self._DRIVES_SENTINEL
 
     async def _refresh_files(self, and_focus=False):
         if self._destroyed:

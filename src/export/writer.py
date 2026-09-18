@@ -6,7 +6,7 @@ import threading
 
 from utils.helpers import (
     _forward_stderr, _ffmpeg_exe, _probe_hw_accel, _CREATE_NO_WINDOW,
-    _log, _encode_threads,
+    _encode_threads,
 )
 
 

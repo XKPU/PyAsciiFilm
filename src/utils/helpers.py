@@ -141,9 +141,67 @@ def _ffmpeg_exe():
     try:
         import imageio_ffmpeg
         _FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
+        os.environ.setdefault("IMAGEIO_FFMPEG_EXE", _FFMPEG)
     except Exception:
         _FFMPEG = False
     return _FFMPEG or None
+
+
+def _init_ffmpeg():
+    ff = _ffmpeg_exe()
+    if not ff:
+        raise RuntimeError("未找到随包 ffmpeg，程序无法运行。请确保 imageio-ffmpeg 已正确安装。")
+    os.environ.setdefault("IMAGEIO_FFMPEG_EXE", ff)
+    return ff
+
+
+# ---- imageio 视频元数据 ----
+def _imageio_probe(path):
+    """用 imageio 的 FFMPEG 插件读取视频元数据。
+
+    返回 {"width","height","fps","frame_count","duration"}，失败返回 None。
+
+    要点：
+    - 插件名必须是大写 "FFMPEG"：imageio 对插件名大小写敏感，
+      传 "ffmpeg" 会抛 ValueError。
+    - ffmpeg 插件的 nframes 在非 loop 模式下恒为 inf（见 imageio
+      plugins/ffmpeg.py 中 _nframes 的初始化），因此总帧数由
+      duration * fps 推算，时长直接取 duration 字段。
+    """
+    try:
+        import imageio.v3 as iio
+        meta = iio.immeta(path, plugin="FFMPEG")
+        if not meta:
+            return None
+        size = meta.get("source_size") or meta.get("size") or (0, 0)
+        w = int(size[0] or 0)
+        h = int(size[1] or 0)
+        if w <= 0 or h <= 0:
+            return None
+        try:
+            fps = float(meta.get("fps") or 0)
+        except (TypeError, ValueError):
+            fps = 0.0
+        try:
+            duration = float(meta.get("duration") or 0)
+        except (TypeError, ValueError):
+            duration = 0.0
+        nframes = meta.get("nframes")
+        if isinstance(nframes, int) and nframes > 0:
+            n = nframes
+            if duration <= 0 and fps > 0:
+                duration = n / fps
+        else:
+            n = int(round(duration * fps)) if duration > 0 and fps > 0 else 0
+        return {
+            "width": w,
+            "height": h,
+            "fps": fps,
+            "frame_count": n,
+            "duration": duration,
+        }
+    except Exception:
+        return None
 
 
 def _forward_stderr(proc, log):

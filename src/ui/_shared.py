@@ -1,5 +1,4 @@
 """app.py 与 screens/ 之间的共享工具，避免循环导入"""
-import os
 
 _EXPORTER = None
 _cached_decode_backends = None

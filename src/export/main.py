@@ -8,15 +8,15 @@ import time
 from core.main import ASCII_CHARS, make_lookup, reload_charset
 from decoder.main import FrameReader
 from utils.helpers import (
-    clean_fps, _forward_stderr, _ffmpeg_exe,
-    _probe_hw_accel, _CREATE_NO_WINDOW, _log, _set_ffmpeg_max_usage,
+    clean_fps, _ffmpeg_exe,
+    _CREATE_NO_WINDOW, _log, _set_ffmpeg_max_usage,
 )
 from .renderer import (
     _load_mono_font, _build_glyph_atlas, _render_frame, _small,
     _grids_from_rgb,
 )
 from .writer import (
-    QueuedWriter, _make_ffmpeg_writer, _MAX_CANVAS_W, _MAX_CANVAS_H, _ENCODER_MAX_SIZE,
+    QueuedWriter, _make_ffmpeg_writer, _MAX_CANVAS_W, _MAX_CANVAS_H,
 )
 
 _GRAY_LOOKUP = make_lookup(ASCII_CHARS)

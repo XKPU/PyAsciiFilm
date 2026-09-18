@@ -3,10 +3,9 @@ import re
 import subprocess
 import time
 
-import cv2
 import numpy as np
 from utils.helpers import (
-    clean_fps,
+    clean_fps, _imageio_probe,
     _forward_stderr, _ffmpeg_exe, _probe_hw_accel,
     _CREATE_NO_WINDOW, _log, _decode_threads,
 )
@@ -37,7 +36,7 @@ def _fps_flag():
 
 
 class FrameReader:
-    """视频帧读取器：cv2 优先，失败回退 ffmpeg 管道"""
+    """视频帧读取器：imageio/ffmpeg 优先，失败回退 ffmpeg 管道"""
 
     def __init__(self, video_path, log=None, force_ffmpeg=False, force_size=None,
                  metadata=None, hwaccel=True, decode_args=None, ffmpeg_usage=None):
@@ -48,7 +47,8 @@ class FrameReader:
         self._force_size = force_size
         self._hwaccel = hwaccel
         self._decode_args = tuple(decode_args) if decode_args else None
-        self._cv2 = None
+        self._reader = None
+        self._reader_idx = 0
         self._proc = None
         self._frame_bytes = 0
         self._pipe_w = self._pipe_h = 0
@@ -71,31 +71,26 @@ class FrameReader:
 
     def _open(self):
         if not self._force:
-            cap = cv2.VideoCapture(self.path)
-            if cap.isOpened():
-                w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                fps = clean_fps(cap.get(cv2.CAP_PROP_FPS))
-                n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                ret, _ = cap.read()
-                if w > 0 and h > 0 and ret:
-                    try:
-                        cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                    except Exception:
-                        pass
-                    self._cv2 = cap
-                    self.width, self.height = w, h
-                    self.fps, self.frame_count = fps, n
-                    self.duration = (n / fps) if fps else 0.0
+            try:
+                import imageio.v3 as iio
+                info = _imageio_probe(self.path)
+                if info:
+                    self._reader = iio.imiter(self.path, plugin="FFMPEG")
+                    self._reader_idx = 0
+                    self.width, self.height = info["width"], info["height"]
+                    self.fps = clean_fps(info["fps"])
+                    self.frame_count = info["frame_count"]
+                    self.duration = info["duration"]
                     return
-                cap.release()
+            except Exception:
+                pass
         self._open_ffmpeg()
 
     def _open_ffmpeg(self):
         ff = _ffmpeg_exe()
         if not ff:
             raise RuntimeError(
-                "无法初始化 cv2 视频解码器，且未找到随包 ffmpeg，无法解码该视频。"
+                "无法初始化视频解码器，且未找到随包 ffmpeg，无法解码该视频。"
             )
         w, h, fps, n, dur = self._probe_with_ffmpeg(ff)
         if w <= 0 or h <= 0:
@@ -123,7 +118,7 @@ class FrameReader:
                 else:
                     self._log("导出解码：使用随包 ffmpeg 软件解码")
         else:
-            self._log("解码回退：cv2 无法打开该视频，改用随包 ffmpeg 管道解码")
+            self._log("解码回退：改用随包 ffmpeg 管道解码")
         self._launch_ffmpeg()
 
     def _launch_ffmpeg(self, seek_seconds=0):
@@ -147,7 +142,7 @@ class FrameReader:
             cmd += ["-i", self.path] + _fps_flag()
             if self._scale_w > 0 and self._scale_h > 0:
                 cmd += ["-vf", f"scale={self._scale_w}:{self._scale_h}:flags=neighbor"]
-            cmd += ["-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
+            cmd += ["-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
             kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE,
                       "creationflags": _CREATE_NO_WINDOW}
             self._proc = subprocess.Popen(cmd, **kwargs)
@@ -206,37 +201,29 @@ class FrameReader:
                 n = int(dur * fps)
 
         if w <= 0 or h <= 0:
-            cap = cv2.VideoCapture(self.path)
-            if cap.isOpened():
-                w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or w
-                h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or h
-                fps = clean_fps(cap.get(cv2.CAP_PROP_FPS)) or fps
-                n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or n
-            cap.release()
+            info = _imageio_probe(self.path)
+            if info:
+                w = info["width"] or w
+                h = info["height"] or h
+                fps = clean_fps(info["fps"]) or fps
+                n = info["frame_count"] or n
+                dur = info["duration"] or dur
 
         return w, h, fps, n, dur
 
     def read(self):
-        if self._cv2 is not None:
-            return self._cv2.read()
+        if self._reader is not None:
+            try:
+                frame = next(self._reader)
+                self._reader_idx += 1
+                return True, frame
+            except StopIteration:
+                return False, None
         raw = self._proc.stdout.read(self._frame_bytes)
         if len(raw) < self._frame_bytes:
             return False, None
         frame = np.frombuffer(raw, dtype=np.uint8).reshape(self._pipe_h, self._pipe_w, 3)
         return True, frame
-
-    def seek(self, frame_no):
-        frame_no = max(0, min(int(frame_no), max(0, self.frame_count - 1)))
-        if self._cv2 is not None:
-            try:
-                self._cv2.set(cv2.CAP_PROP_POS_FRAMES, frame_no)
-                return True
-            except Exception:
-                return False
-        self._kill_proc()
-        seek_seconds = frame_no / max(self.fps, 1.0)
-        self._launch_ffmpeg(seek_seconds)
-        return True
 
     def _kill_proc(self):
         if self._proc is None:
@@ -259,12 +246,12 @@ class FrameReader:
         self._proc = None
 
     def release(self):
-        if self._cv2 is not None:
+        if self._reader is not None:
             try:
-                self._cv2.release()
+                self._reader.close()
             except Exception:
                 pass
-            self._cv2 = None
+            self._reader = None
         if self._proc is not None:
             try:
                 self._proc.stdout.close()

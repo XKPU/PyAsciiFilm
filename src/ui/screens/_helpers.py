@@ -1,11 +1,13 @@
 """导出/播放设置页共享的纯函数辅助"""
 import math
-import os
 
-from utils.helpers import _read_config, LAST_VIDEO_DIR_KEY
+from utils.helpers import (
+    _read_config, _imageio_probe,
+    LAST_VIDEO_DIR_KEY, LAST_EXPORT_DIR_KEY,
+)
 
 
-def _load_last_dir(key="last_video_dir"):
+def _load_last_dir():
     try:
         return _read_config().get(LAST_VIDEO_DIR_KEY) or ""
     except Exception:
@@ -14,7 +16,7 @@ def _load_last_dir(key="last_video_dir"):
 
 def _load_last_export_dir():
     try:
-        return _read_config().get("last_export_dir") or ""
+        return _read_config().get(LAST_EXPORT_DIR_KEY) or ""
     except Exception:
         return ""
 
@@ -31,24 +33,12 @@ def _format_duration(seconds: float) -> str:
 
 
 def _probe_video_metadata(path: str) -> dict | None:
-    try:
-        import cv2
-        cap = cv2.VideoCapture(path)
-        if not cap.isOpened():
-            return None
-        info = {
-            "width": int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)),
-            "height": int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)),
-            "fps": cap.get(cv2.CAP_PROP_FPS),
-            "frame_count": int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
-        }
-        cap.release()
-        fps = info.get("fps", 0) or 0
-        frames = info.get("frame_count", 0) or 0
-        info["duration"] = frames / fps if fps > 0 and frames > 0 else 0
-        return info
-    except Exception:
-        return None
+    """读取视频元数据（宽/高/帧率/总帧数/时长）。
+
+    直接复用 utils.helpers._imageio_probe，保证文件浏览器、播放与导出
+    三处使用完全一致的视频信息。
+    """
+    return _imageio_probe(path)
 
 
 def char_h_for_w(char_w, src_w, src_h, cell_w, cell_h):
