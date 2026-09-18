@@ -16,12 +16,11 @@
 运行源码需要以下 Python 依赖：
 
 - `numpy`
-- `opencv-python`
+- `opencv-python-headless`/`opencv-python`
 - `pillow`
 - `imageio-ffmpeg`
 - `textual`
 - `miniaudio`
-- `zstandard`
 
 ## 配置文件
 
@@ -57,10 +56,6 @@
 | Linux | x86_64 | 二进制可执行文件 | `ubuntu-latest` |
 | Linux | aarch64 (ARM64) | 二进制可执行文件 | `ubuntu-latest` |
 | macOS | aarch64 (Apple Silicon) | 二进制可执行文件 | `macos-latest` |
-
-### 构建配置说明
-
-- `.github/workflows/ci.yml` — GitHub Actions 自动化构建流水线（6 个平台）
 
 ## 许可证
 
