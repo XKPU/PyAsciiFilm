@@ -14,17 +14,17 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
       - run: pip install "nuitka>=2.3.7" ordered-set zstandard
-      - run: pip install --only-binary=:all: -r requirements.txt
+      - run: pip install -r requirements.txt
       - name: Cache Nuitka
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/nuitka-cache
-          key: nuitka-${{ runner.os }}-arm64-${{ hashFiles('requirements.txt', 'src/**/*.py') }}
+          key: "nuitka-${{ runner.os }}-arm64-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
           restore-keys: |
-            nuitka-${{ runner.os }}-arm64-
+            "nuitka-${{ runner.os }}-arm64-"
       - shell: pwsh
         env:
-          NUITKA_CACHE_DIR: ${{ runner.temp }}/nuitka-cache
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache"
         run: |
           $VERSION = Get-Content version.txt -Raw
           $VERSION = $VERSION.Trim()
