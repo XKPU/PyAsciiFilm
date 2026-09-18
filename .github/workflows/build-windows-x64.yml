@@ -1,26 +1,22 @@
-name: Build Windows ARM64
+name: Build Windows x64
 
 on:
   workflow_dispatch:
 
 jobs:
-  build-windows-arm64:
+  build-windows-x64:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - run: pip install "nuitka>=2.3.7" ordered-set zstandard
-      - run: pip install -r requirements.txt
-
+      - run: pip install "nuitka>=2.3.7" ordered-set zstandard -r requirements.txt
       - name: Cache Nuitka
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/nuitka-cache
-          key: "nuitka-${{ runner.os }}-arm64-cross-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          key: "nuitka-${{ runner.os }}-x64-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
           restore-keys: |
-            "nuitka-${{ runner.os }}-arm64-cross-"
-
-      - name: Build with Nuitka (ARM64 cross-compile)
-        shell: pwsh
+            "nuitka-${{ runner.os }}-x64-"
+      - shell: pwsh
         env:
           NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache"
         run: |
@@ -35,24 +31,25 @@ jobs:
             --include-package=rich._unicode_data `
             --include-package=imageio_ffmpeg `
             --include-module=miniaudio `
-            --output-filename="PyAsciiFilm-v${VERSION}-windows_arm64.exe" `
+            --output-filename="PyAsciiFilm-v${VERSION}-windows_x64.exe" `
             --output-dir=dist `
             --lto=yes `
-            --windows-arch=arm64 `
             --windows-company-name=K_PU `
             --windows-product-name=PyAsciiFilm `
             --windows-file-version=$VERSION `
             --windows-product-version=$VERSION `
             src/main.py
-
-      - name: Package
-        shell: pwsh
+      - shell: pwsh
         run: |
           $distFolder = Get-ChildItem -Path dist -Directory -Filter "*.dist" | Select-Object -First 1
-          7z a -tzip -mx=9 "dist/$($distFolder.Name).zip" "$($distFolder.FullName)\*"
-
+          if ($distFolder) {
+            7z a -tzip -mx=9 "dist/$($distFolder.Name).zip" "$($distFolder.FullName)\*"
+          } else {
+            Write-Error "Build failed: no .dist folder found in dist/"
+            exit 1
+          }
       - uses: actions/upload-artifact@v4
         with:
-          name: pyasciifilm-windows-arm64
+          name: pyasciifilm-windows-x64
           path: dist/*.dist.zip
           compression-level: 9

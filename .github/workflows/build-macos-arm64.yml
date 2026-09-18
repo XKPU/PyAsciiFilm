@@ -1,0 +1,48 @@
+name: Build macOS ARM64
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-macos-arm64:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install "nuitka>=2.3.7" ordered-set zstandard -r requirements.txt
+      - name: Cache Nuitka
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/nuitka-cache
+          key: "nuitka-${{ runner.os }}-arm64-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          restore-keys: |
+            "nuitka-${{ runner.os }}-arm64-"
+      - run: |
+          VERSION=$(cat version.txt | tr -d '[:space:]')
+          python -m nuitka \
+            --standalone \
+            --follow-imports \
+            --assume-yes-for-downloads \
+            --enable-plugin=tk-inter \
+            --include-package=textual \
+            --include-package=rich._unicode_data \
+            --include-package=imageio_ffmpeg \
+            --include-module=miniaudio \
+            --output-filename="PyAsciiFilm-v${VERSION}-macos_arm64" \
+            --output-dir=dist \
+            --lto=yes \
+            src/main.py
+        env:
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache"
+      - run: |
+          distFolder=$(find dist -maxdepth 1 -type d -name "*.dist" | head -1)
+          if [ -n "$distFolder" ]; then
+            zip -9 "dist/$(basename $distFolder).zip" -r "$distFolder"/*
+          else
+            echo "::error::Build failed: no .dist folder found in dist/"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-macos-arm64
+          path: dist/*.dist.zip
+          compression-level: 9
