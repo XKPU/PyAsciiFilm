@@ -8,6 +8,11 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10.9"
+          cache: pip
+          cache-dependency-path: requirements.txt
       - run: pip install "nuitka>=2.3.7" ordered-set zstandard -r requirements.txt
       - name: Cache Nuitka
         uses: actions/cache@v4
