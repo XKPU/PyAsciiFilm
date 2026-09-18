@@ -59,5 +59,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-windows-arm64
-        path: dist/*.dist.zip
-        compression-level: 9
+          path: dist/*.dist.zip
+          compression-level: 9
