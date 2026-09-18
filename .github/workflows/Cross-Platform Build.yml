@@ -98,7 +98,7 @@ jobs:
             --output-filename="PyAsciiFilm-v${VERSION}-windows_arm64.exe" `
             --output-dir=dist `
             --lto=yes `
-            --windows-arch=arm64 `
+            --target-arch=arm64 `
             --windows-company-name=K_PU `
             --windows-product-name=PyAsciiFilm `
             --windows-file-version=$VERSION `
