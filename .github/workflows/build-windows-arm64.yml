@@ -1,0 +1,60 @@
+name: Build Windows ARM64
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows-arm64:
+    runs-on: windows-11-vs2026-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.9"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install "nuitka>=2.3.7" ordered-set zstandard -r requirements.txt
+      - name: Cache Nuitka
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/nuitka-cache
+          key: nuitka-${{ runner.os }}-arm64-${{ hashFiles('requirements.txt', 'src/**/*.py') }}
+          restore-keys: |
+            nuitka-${{ runner.os }}-arm64-
+      - shell: pwsh
+        env:
+          NUITKA_CACHE_DIR: ${{ runner.temp }}/nuitka-cache
+        run: |
+          $VERSION = Get-Content version.txt -Raw
+          $VERSION = $VERSION.Trim()
+          python -m nuitka `
+            --standalone `
+            --follow-imports `
+            --assume-yes-for-downloads `
+            --enable-plugin=tk-inter `
+            --include-package=textual `
+            --include-package=rich._unicode_data `
+            --include-package=imageio_ffmpeg `
+            --include-module=miniaudio `
+            --output-filename="PyAsciiFilm-v${VERSION}-windows_arm64.exe" `
+            --output-dir=dist `
+            --lto=yes `
+            --windows-company-name=K_PU `
+            --windows-product-name=PyAsciiFilm `
+            --windows-file-version=$VERSION `
+            --windows-product-version=$VERSION `
+            src/main.py
+      - shell: pwsh
+        run: |
+          $distFolder = Get-ChildItem -Path dist -Directory -Filter "*.dist" | Select-Object -First 1
+          if ($distFolder) {
+            7z a -tzip -mx=9 "dist/$($distFolder.Name).zip" "$($distFolder.FullName)\*"
+          } else {
+            Write-Error "Build failed: no .dist folder found in dist/"
+            exit 1
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-windows-arm64
+          path: dist/*.dist.zip
+          compression-level: 9
