@@ -14,16 +14,19 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
       - run: pip install "nuitka>=2.3.7" ordered-set zstandard -r requirements.txt
-      - name: Cache Nuitka
+
+      - name: Cache Nuitka (standalone)
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/nuitka-cache
-          key: "nuitka-${{ runner.os }}-x64-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          path: ${{ runner.temp }}/nuitka-cache-standalone
+          key: "nuitka-${{ runner.os }}-x64-standalone-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
           restore-keys: |
-            "nuitka-${{ runner.os }}-x64-"
-      - shell: pwsh
+            "nuitka-${{ runner.os }}-x64-standalone-"
+
+      - name: Build standalone
+        shell: pwsh
         env:
-          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache"
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-standalone"
         run: |
           $VERSION = Get-Content version.txt -Raw
           $VERSION = $VERSION.Trim()
@@ -37,26 +40,67 @@ jobs:
             --include-package=imageio_ffmpeg `
             --include-module=miniaudio `
             --output-filename="PyAsciiFilm-v${VERSION}-windows_x64.exe" `
-            --output-dir=dist `
+            --output-dir=dist/standalone `
             --lto=yes `
             --windows-company-name=K_PU `
             --windows-product-name=PyAsciiFilm `
             --windows-file-version=$VERSION `
             --windows-product-version=$VERSION `
             src/main.py
-      - shell: pwsh
+
+      - name: Package standalone to zip
+        shell: pwsh
         run: |
-          $distFolder = Get-ChildItem -Path dist -Directory -Filter "*.dist" | Select-Object -First 1
+          $distFolder = Get-ChildItem -Path dist/standalone -Directory -Filter "*.dist" | Select-Object -First 1
           if ($distFolder) {
-            7z a -tzip -mx=9 "dist/$($distFolder.Name).zip" "$($distFolder.FullName)\*"
+            7z a -tzip -mx=9 "dist/standalone/$($distFolder.Name).zip" "$($distFolder.FullName)\*"
           } else {
-            Write-Error "Build failed: no .dist folder found in dist/"
+            Write-Error "Build failed: no .dist folder found in dist/standalone/"
             exit 1
           }
+
+      - name: Cache Nuitka (onefile)
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/nuitka-cache-onefile
+          key: "nuitka-${{ runner.os }}-x64-onefile-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          restore-keys: |
+            "nuitka-${{ runner.os }}-x64-onefile-"
+
+      - name: Build onefile
+        shell: pwsh
+        env:
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-onefile"
+        run: |
+          $VERSION = Get-Content version.txt -Raw
+          $VERSION = $VERSION.Trim()
+          python -m nuitka `
+            --onefile `
+            --follow-imports `
+            --assume-yes-for-downloads `
+            --enable-plugin=tk-inter `
+            --include-package=textual `
+            --include-package=rich._unicode_data `
+            --include-package=imageio_ffmpeg `
+            --include-module=miniaudio `
+            --output-filename="PyAsciiFilm-v${VERSION}-windows_x64.exe" `
+            --output-dir=dist/onefile `
+            --lto=yes `
+            --windows-company-name=K_PU `
+            --windows-product-name=PyAsciiFilm `
+            --windows-file-version=$VERSION `
+            --windows-product-version=$VERSION `
+            src/main.py
+
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-windows-x64
-          path: dist/*.dist.zip
+          path: dist/standalone/*.dist.zip
+          compression-level: 9
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-windows-x64-onefile
+          path: dist/onefile/PyAsciiFilm-*-windows_x64.exe
           compression-level: 9
 
   build-windows-arm64:
@@ -71,18 +115,18 @@ jobs:
       - run: pip install "nuitka>=2.3.7" ordered-set zstandard
       - run: pip install -r requirements.txt
 
-      - name: Cache Nuitka
+      - name: Cache Nuitka (standalone)
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/nuitka-cache
-          key: "nuitka-${{ runner.os }}-arm64-cross-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          path: ${{ runner.temp }}/nuitka-cache-standalone
+          key: "nuitka-${{ runner.os }}-arm64-standalone-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
           restore-keys: |
-            "nuitka-${{ runner.os }}-arm64-cross-"
+            "nuitka-${{ runner.os }}-arm64-standalone-"
 
-      - name: Build with Nuitka (ARM64 cross-compile)
+      - name: Build standalone (ARM64 cross-compile)
         shell: pwsh
         env:
-          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache"
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-standalone"
         run: |
           $VERSION = Get-Content version.txt -Raw
           $VERSION = $VERSION.Trim()
@@ -96,7 +140,7 @@ jobs:
             --include-package=imageio_ffmpeg `
             --include-module=miniaudio `
             --output-filename="PyAsciiFilm-v${VERSION}-windows_arm64.exe" `
-            --output-dir=dist `
+            --output-dir=dist/standalone `
             --lto=yes `
             --target-arch=arm64 `
             --windows-company-name=K_PU `
@@ -105,16 +149,55 @@ jobs:
             --windows-product-version=$VERSION `
             src/main.py
 
-      - name: Package
+      - name: Package standalone to zip
         shell: pwsh
         run: |
-          $distFolder = Get-ChildItem -Path dist -Directory -Filter "*.dist" | Select-Object -First 1
-          7z a -tzip -mx=9 "dist/$($distFolder.Name).zip" "$($distFolder.FullName)\*"
+          $distFolder = Get-ChildItem -Path dist/standalone -Directory -Filter "*.dist" | Select-Object -First 1
+          7z a -tzip -mx=9 "dist/standalone/$($distFolder.Name).zip" "$($distFolder.FullName)\*"
+
+      - name: Cache Nuitka (onefile)
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/nuitka-cache-onefile
+          key: "nuitka-${{ runner.os }}-arm64-onefile-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          restore-keys: |
+            "nuitka-${{ runner.os }}-arm64-onefile-"
+
+      - name: Build onefile (ARM64 cross-compile)
+        shell: pwsh
+        env:
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-onefile"
+        run: |
+          $VERSION = Get-Content version.txt -Raw
+          $VERSION = $VERSION.Trim()
+          python -m nuitka `
+            --onefile `
+            --follow-imports `
+            --assume-yes-for-downloads `
+            --enable-plugin=tk-inter `
+            --include-package=textual `
+            --include-package=rich._unicode_data `
+            --include-package=imageio_ffmpeg `
+            --include-module=miniaudio `
+            --output-filename="PyAsciiFilm-v${VERSION}-windows_arm64.exe" `
+            --output-dir=dist/onefile `
+            --lto=yes `
+            --target-arch=arm64 `
+            --windows-company-name=K_PU `
+            --windows-product-name=PyAsciiFilm `
+            --windows-file-version=$VERSION `
+            --windows-product-version=$VERSION `
+            src/main.py
 
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-windows-arm64
-          path: dist/*.dist.zip
+          path: dist/standalone/*.dist.zip
+          compression-level: 9
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-windows-arm64-onefile
+          path: dist/onefile/PyAsciiFilm-*-windows_arm64.exe
           compression-level: 9
 
   build-linux-x64:
@@ -127,14 +210,19 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
       - run: pip install "nuitka>=2.3.7" ordered-set zstandard -r requirements.txt
-      - name: Cache Nuitka
+
+      - name: Cache Nuitka (standalone)
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/nuitka-cache
-          key: "nuitka-${{ runner.os }}-x64-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          path: ${{ runner.temp }}/nuitka-cache-standalone
+          key: "nuitka-${{ runner.os }}-x64-standalone-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
           restore-keys: |
-            "nuitka-${{ runner.os }}-x64-"
-      - run: |
+            "nuitka-${{ runner.os }}-x64-standalone-"
+
+      - name: Build standalone
+        env:
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-standalone"
+        run: |
           VERSION=$(cat version.txt | tr -d '[:space:]')
           python -m nuitka \
             --standalone \
@@ -146,23 +234,56 @@ jobs:
             --include-package=imageio_ffmpeg \
             --include-module=miniaudio \
             --output-filename="PyAsciiFilm-v${VERSION}-linux_x64" \
-            --output-dir=dist \
+            --output-dir=dist/standalone \
             --lto=yes \
             src/main.py
-        env:
-          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache"
-      - run: |
-          distFolder=$(find dist -maxdepth 1 -type d -name "*.dist" | head -1)
+
+      - name: Package standalone to zip
+        run: |
+          distFolder=$(find dist/standalone -maxdepth 1 -type d -name "*.dist" | head -1)
           if [ -n "$distFolder" ]; then
-            zip -9 "dist/$(basename $distFolder).zip" -r "$distFolder"/*
+            zip -9 "dist/standalone/$(basename $distFolder).zip" -r "$distFolder"/*
           else
-            echo "::error::Build failed: no .dist folder found in dist/"
+            echo "::error::Build failed: no .dist folder found in dist/standalone/"
             exit 1
           fi
+
+      - name: Cache Nuitka (onefile)
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/nuitka-cache-onefile
+          key: "nuitka-${{ runner.os }}-x64-onefile-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          restore-keys: |
+            "nuitka-${{ runner.os }}-x64-onefile-"
+
+      - name: Build onefile
+        env:
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-onefile"
+        run: |
+          VERSION=$(cat version.txt | tr -d '[:space:]')
+          python -m nuitka \
+            --onefile \
+            --follow-imports \
+            --assume-yes-for-downloads \
+            --enable-plugin=tk-inter \
+            --include-package=textual \
+            --include-package=rich._unicode_data \
+            --include-package=imageio_ffmpeg \
+            --include-module=miniaudio \
+            --output-filename="PyAsciiFilm-v${VERSION}-linux_x64" \
+            --output-dir=dist/onefile \
+            --lto=yes \
+            src/main.py
+
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-linux-x64
-          path: dist/*.dist.zip
+          path: dist/standalone/*.dist.zip
+          compression-level: 9
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-linux-x64-onefile
+          path: dist/onefile/PyAsciiFilm-*-linux_x64
           compression-level: 9
 
   build-linux-arm64:
@@ -175,14 +296,19 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
       - run: pip install "nuitka>=2.3.7" ordered-set zstandard -r requirements.txt
-      - name: Cache Nuitka
+
+      - name: Cache Nuitka (standalone)
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/nuitka-cache
-          key: "nuitka-${{ runner.os }}-arm64-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          path: ${{ runner.temp }}/nuitka-cache-standalone
+          key: "nuitka-${{ runner.os }}-arm64-standalone-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
           restore-keys: |
-            "nuitka-${{ runner.os }}-arm64-"
-      - run: |
+            "nuitka-${{ runner.os }}-arm64-standalone-"
+
+      - name: Build standalone
+        env:
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-standalone"
+        run: |
           VERSION=$(cat version.txt | tr -d '[:space:]')
           python -m nuitka \
             --standalone \
@@ -194,23 +320,56 @@ jobs:
             --include-package=imageio_ffmpeg \
             --include-module=miniaudio \
             --output-filename="PyAsciiFilm-v${VERSION}-linux_arm64" \
-            --output-dir=dist \
+            --output-dir=dist/standalone \
             --lto=yes \
             src/main.py
-        env:
-          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache"
-      - run: |
-          distFolder=$(find dist -maxdepth 1 -type d -name "*.dist" | head -1)
+
+      - name: Package standalone to zip
+        run: |
+          distFolder=$(find dist/standalone -maxdepth 1 -type d -name "*.dist" | head -1)
           if [ -n "$distFolder" ]; then
-            zip -9 "dist/$(basename $distFolder).zip" -r "$distFolder"/*
+            zip -9 "dist/standalone/$(basename $distFolder).zip" -r "$distFolder"/*
           else
-            echo "::error::Build failed: no .dist folder found in dist/"
+            echo "::error::Build failed: no .dist folder found in dist/standalone/"
             exit 1
           fi
+
+      - name: Cache Nuitka (onefile)
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/nuitka-cache-onefile
+          key: "nuitka-${{ runner.os }}-arm64-onefile-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          restore-keys: |
+            "nuitka-${{ runner.os }}-arm64-onefile-"
+
+      - name: Build onefile
+        env:
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-onefile"
+        run: |
+          VERSION=$(cat version.txt | tr -d '[:space:]')
+          python -m nuitka \
+            --onefile \
+            --follow-imports \
+            --assume-yes-for-downloads \
+            --enable-plugin=tk-inter \
+            --include-package=textual \
+            --include-package=rich._unicode_data \
+            --include-package=imageio_ffmpeg \
+            --include-module=miniaudio \
+            --output-filename="PyAsciiFilm-v${VERSION}-linux_arm64" \
+            --output-dir=dist/onefile \
+            --lto=yes \
+            src/main.py
+
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-linux-arm64
-          path: dist/*.dist.zip
+          path: dist/standalone/*.dist.zip
+          compression-level: 9
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-linux-arm64-onefile
+          path: dist/onefile/PyAsciiFilm-*-linux_arm64
           compression-level: 9
 
   build-macos-arm64:
@@ -223,14 +382,19 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
       - run: pip install "nuitka>=2.3.7" ordered-set zstandard -r requirements.txt
-      - name: Cache Nuitka
+
+      - name: Cache Nuitka (standalone)
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/nuitka-cache
-          key: "nuitka-${{ runner.os }}-arm64-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          path: ${{ runner.temp }}/nuitka-cache-standalone
+          key: "nuitka-${{ runner.os }}-arm64-standalone-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
           restore-keys: |
-            "nuitka-${{ runner.os }}-arm64-"
-      - run: |
+            "nuitka-${{ runner.os }}-arm64-standalone-"
+
+      - name: Build standalone
+        env:
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-standalone"
+        run: |
           VERSION=$(cat version.txt | tr -d '[:space:]')
           python -m nuitka \
             --standalone \
@@ -242,21 +406,54 @@ jobs:
             --include-package=imageio_ffmpeg \
             --include-module=miniaudio \
             --output-filename="PyAsciiFilm-v${VERSION}-macos_arm64" \
-            --output-dir=dist \
+            --output-dir=dist/standalone \
             --lto=yes \
             src/main.py
-        env:
-          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache"
-      - run: |
-          distFolder=$(find dist -maxdepth 1 -type d -name "*.dist" | head -1)
+
+      - name: Package standalone to zip
+        run: |
+          distFolder=$(find dist/standalone -maxdepth 1 -type d -name "*.dist" | head -1)
           if [ -n "$distFolder" ]; then
-            zip -9 "dist/$(basename $distFolder).zip" -r "$distFolder"/*
+            zip -9 "dist/standalone/$(basename $distFolder).zip" -r "$distFolder"/*
           else
-            echo "::error::Build failed: no .dist folder found in dist/"
+            echo "::error::Build failed: no .dist folder found in dist/standalone/"
             exit 1
           fi
+
+      - name: Cache Nuitka (onefile)
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/nuitka-cache-onefile
+          key: "nuitka-${{ runner.os }}-arm64-onefile-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          restore-keys: |
+            "nuitka-${{ runner.os }}-arm64-onefile-"
+
+      - name: Build onefile
+        env:
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-onefile"
+        run: |
+          VERSION=$(cat version.txt | tr -d '[:space:]')
+          python -m nuitka \
+            --onefile \
+            --follow-imports \
+            --assume-yes-for-downloads \
+            --enable-plugin=tk-inter \
+            --include-package=textual \
+            --include-package=rich._unicode_data \
+            --include-package=imageio_ffmpeg \
+            --include-module=miniaudio \
+            --output-filename="PyAsciiFilm-v${VERSION}-macos_arm64" \
+            --output-dir=dist/onefile \
+            --lto=yes \
+            src/main.py
+
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-macos-arm64
-          path: dist/*.dist.zip
+          path: dist/standalone/*.dist.zip
+          compression-level: 9
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-macos-arm64-onefile
+          path: dist/onefile/PyAsciiFilm-*-macos_arm64
           compression-level: 9

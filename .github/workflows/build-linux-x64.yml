@@ -17,10 +17,10 @@ jobs:
       - name: Cache Nuitka
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/nuitka-cache
-          key: "nuitka-${{ runner.os }}-x64-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          path: ${{ runner.temp }}/nuitka-cache-standalone
+          key: "nuitka-${{ runner.os }}-x64-standalone-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
           restore-keys: |
-            "nuitka-${{ runner.os }}-x64-"
+            "nuitka-${{ runner.os }}-x64-standalone-"
       - run: |
           VERSION=$(cat version.txt | tr -d '[:space:]')
           python -m nuitka \
@@ -37,7 +37,7 @@ jobs:
             --lto=yes \
             src/main.py
         env:
-          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache"
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-standalone"
       - run: |
           distFolder=$(find dist -maxdepth 1 -type d -name "*.dist" | head -1)
           if [ -n "$distFolder" ]; then

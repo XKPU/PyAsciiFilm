@@ -1,0 +1,220 @@
+name: Onefile Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10.9"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install "nuitka>=2.3.7" ordered-set zstandard -r requirements.txt
+      - name: Cache Nuitka
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/nuitka-cache-onefile
+          key: "nuitka-${{ runner.os }}-x64-onefile-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          restore-keys: |
+            "nuitka-${{ runner.os }}-x64-onefile-"
+      - shell: pwsh
+        env:
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-onefile"
+        run: |
+          $VERSION = Get-Content version.txt -Raw
+          $VERSION = $VERSION.Trim()
+          python -m nuitka `
+            --onefile `
+            --follow-imports `
+            --assume-yes-for-downloads `
+            --enable-plugin=tk-inter `
+            --include-package=textual `
+            --include-package=rich._unicode_data `
+            --include-package=imageio_ffmpeg `
+            --include-module=miniaudio `
+            --output-filename="PyAsciiFilm-v${VERSION}-windows_x64.exe" `
+            --output-dir=dist `
+            --lto=yes `
+            --windows-company-name=K_PU `
+            --windows-product-name=PyAsciiFilm `
+            --windows-file-version=$VERSION `
+            --windows-product-version=$VERSION `
+            src/main.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-windows-x64-onefile
+          path: dist/PyAsciiFilm-*-windows_x64.exe
+          compression-level: 9
+
+  build-windows-arm64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10.9"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install "nuitka>=2.3.7" ordered-set zstandard
+      - run: pip install -r requirements.txt
+      - name: Cache Nuitka
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/nuitka-cache-onefile
+          key: "nuitka-${{ runner.os }}-arm64-onefile-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          restore-keys: |
+            "nuitka-${{ runner.os }}-arm64-onefile-"
+      - name: Build (ARM64 cross-compile)
+        shell: pwsh
+        env:
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-onefile"
+        run: |
+          $VERSION = Get-Content version.txt -Raw
+          $VERSION = $VERSION.Trim()
+          python -m nuitka `
+            --onefile `
+            --follow-imports `
+            --assume-yes-for-downloads `
+            --enable-plugin=tk-inter `
+            --include-package=textual `
+            --include-package=rich._unicode_data `
+            --include-package=imageio_ffmpeg `
+            --include-module=miniaudio `
+            --output-filename="PyAsciiFilm-v${VERSION}-windows_arm64.exe" `
+            --output-dir=dist `
+            --lto=yes `
+            --target-arch=arm64 `
+            --windows-company-name=K_PU `
+            --windows-product-name=PyAsciiFilm `
+            --windows-file-version=$VERSION `
+            --windows-product-version=$VERSION `
+            src/main.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-windows-arm64-onefile
+          path: dist/PyAsciiFilm-*-windows_arm64.exe
+          compression-level: 9
+
+  build-linux-x64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10.9"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install "nuitka>=2.3.7" ordered-set zstandard -r requirements.txt
+      - name: Cache Nuitka
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/nuitka-cache-onefile
+          key: "nuitka-${{ runner.os }}-x64-onefile-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          restore-keys: |
+            "nuitka-${{ runner.os }}-x64-onefile-"
+      - env:
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-onefile"
+        run: |
+          VERSION=$(cat version.txt | tr -d '[:space:]')
+          python -m nuitka \
+            --onefile \
+            --follow-imports \
+            --assume-yes-for-downloads \
+            --enable-plugin=tk-inter \
+            --include-package=textual \
+            --include-package=rich._unicode_data \
+            --include-package=imageio_ffmpeg \
+            --include-module=miniaudio \
+            --output-filename="PyAsciiFilm-v${VERSION}-linux_x64" \
+            --output-dir=dist \
+            --lto=yes \
+            src/main.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-linux-x64-onefile
+          path: dist/PyAsciiFilm-*-linux_x64
+          compression-level: 9
+
+  build-linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10.9"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install "nuitka>=2.3.7" ordered-set zstandard -r requirements.txt
+      - name: Cache Nuitka
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/nuitka-cache-onefile
+          key: "nuitka-${{ runner.os }}-arm64-onefile-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          restore-keys: |
+            "nuitka-${{ runner.os }}-arm64-onefile-"
+      - env:
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-onefile"
+        run: |
+          VERSION=$(cat version.txt | tr -d '[:space:]')
+          python -m nuitka \
+            --onefile \
+            --follow-imports \
+            --assume-yes-for-downloads \
+            --enable-plugin=tk-inter \
+            --include-package=textual \
+            --include-package=rich._unicode_data \
+            --include-package=imageio_ffmpeg \
+            --include-module=miniaudio \
+            --output-filename="PyAsciiFilm-v${VERSION}-linux_arm64" \
+            --output-dir=dist \
+            --lto=yes \
+            src/main.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-linux-arm64-onefile
+          path: dist/PyAsciiFilm-*-linux_arm64
+          compression-level: 9
+
+  build-macos-arm64:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10.9"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - run: pip install "nuitka>=2.3.7" ordered-set zstandard -r requirements.txt
+      - name: Cache Nuitka
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/nuitka-cache-onefile
+          key: "nuitka-${{ runner.os }}-arm64-onefile-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          restore-keys: |
+            "nuitka-${{ runner.os }}-arm64-onefile-"
+      - env:
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-onefile"
+        run: |
+          VERSION=$(cat version.txt | tr -d '[:space:]')
+          python -m nuitka \
+            --onefile \
+            --follow-imports \
+            --assume-yes-for-downloads \
+            --enable-plugin=tk-inter \
+            --include-package=textual \
+            --include-package=rich._unicode_data \
+            --include-package=imageio_ffmpeg \
+            --include-module=miniaudio \
+            --output-filename="PyAsciiFilm-v${VERSION}-macos_arm64" \
+            --output-dir=dist \
+            --lto=yes \
+            src/main.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-macos-arm64-onefile
+          path: dist/PyAsciiFilm-*-macos_arm64
+          compression-level: 9

@@ -17,13 +17,13 @@ jobs:
       - name: Cache Nuitka
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/nuitka-cache
-          key: "nuitka-${{ runner.os }}-x64-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          path: ${{ runner.temp }}/nuitka-cache-standalone
+          key: "nuitka-${{ runner.os }}-x64-standalone-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
           restore-keys: |
-            "nuitka-${{ runner.os }}-x64-"
+            "nuitka-${{ runner.os }}-x64-standalone-"
       - shell: pwsh
         env:
-          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache"
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-standalone"
         run: |
           $VERSION = Get-Content version.txt -Raw
           $VERSION = $VERSION.Trim()
