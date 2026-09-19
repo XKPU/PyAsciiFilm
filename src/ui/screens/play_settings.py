@@ -90,6 +90,7 @@ class PlaySettingsScreen(Screen):
         else:
             self.call_after_refresh(self._select_video)
         self._decode_backends = []
+        self._poll_decode_backends()
         self._apply_decode_options()
         self._update_keybar()
         self.set_interval(0.5, self._poll_decode_backends)
@@ -98,9 +99,10 @@ class PlaySettingsScreen(Screen):
         if self._decode_backends:
             return
         from .. import _shared
-        if _shared._cached_decode_backends is None:
+        res = getattr(_shared, "_cached_decode_backends", None)
+        if res is None:
             return
-        self._decode_backends = _shared._cached_decode_backends or []
+        self._decode_backends = res or []
         self._apply_decode_options()
 
     def _update_keybar(self):

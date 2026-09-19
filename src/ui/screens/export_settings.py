@@ -17,6 +17,7 @@ from ._helpers import (char_h_for_w, char_w_for_h, canvas_bytes,
                        _warn_detect_pending)
 from .file_conflict import FileConflictScreen
 from ._screen_config import EXPORT_ID_TO_ZONE, EXPORT_ZONE_HINTS, EXPORT_CSS, _EXPORT_INLINE
+from utils.helpers import _list_encoder_options
 
 
 _EXPORT_TAB_ORDER = [
@@ -341,11 +342,18 @@ class ExportSettingsScreen(Screen):
             usage = 35
         usage = max(1, min(100, usage))
 
+        # 编码模式：选中的是编码器名（None = 自动优先硬件）
+        enc_val = self.query_one("#encode_mode", PlainSelect).value
+        encoder = None
+        if (self._encoder_options and isinstance(enc_val, int)
+                and 0 <= enc_val < len(self._encoder_options)):
+            encoder = self._encoder_options[enc_val][1]
+
         from .export_progress import ExportProgressScreen
         self.app.push_screen(ExportProgressScreen(self.video_path, {
             "w": cw, "h": ch, "fps": fps, "out": out_path,
             "color": color, "fmt": self.fmt, "hwaccel": hwaccel,
-            "ffmpeg_usage": usage,
+            "ffmpeg_usage": usage, "encoder": encoder,
         }))
 
     def _shortcut(self, widget_id: str) -> Static:
@@ -385,6 +393,12 @@ class ExportSettingsScreen(Screen):
                     ),
                 ),
                 Horizontal(
+                    Label("编码模式:"), self._shortcut("encode_mode"),
+                    PlainSelect(
+                        [("检测中...", -1)], value=-1, allow_blank=False, id="encode_mode",
+                    ),
+                ),
+                Horizontal(
                     Label("输出目录:"), self._shortcut("out_path"),
                     Input(value=self._get_full_output_path(), id="out_path",
                           placeholder="完整输出路径（含文件名）"),
@@ -412,17 +426,23 @@ class ExportSettingsScreen(Screen):
         else:
             self.call_after_refresh(self._select_video)
         self._decode_backends = []
+        self._encoder_options = []
+        # 同播放设置页：先立即取一次缓存，避免进入本页白等一次轮询间隔
+        self._poll_decode_backends()
         self._apply_decode_options()
+        self._apply_encoder_options()
         self._update_keybar()
         self.set_interval(0.5, self._poll_decode_backends)
+        self.set_interval(0.5, self._apply_encoder_options)
 
     def _poll_decode_backends(self):
         if self._decode_backends:
             return
         from .. import _shared
-        if _shared._cached_decode_backends is None:
+        res = getattr(_shared, "_cached_decode_backends", None)
+        if res is None:
             return
-        self._decode_backends = _shared._cached_decode_backends or []
+        self._decode_backends = res or []
         self._apply_decode_options()
 
     def _update_keybar(self):
@@ -496,6 +516,7 @@ class ExportSettingsScreen(Screen):
             "ctrl+g": "fmt",
             "ctrl+u": "usage",
             "ctrl+d": "decode_mode",
+            "ctrl+e": "encode_mode",
             "ctrl+o": "out_path",
             "ctrl+t": "color",
         }
@@ -515,6 +536,22 @@ class ExportSettingsScreen(Screen):
             event.stop()
             self.query_one("#ok", Button).action_press()
             return
+
+    def _apply_encoder_options(self):
+        # 编码模式列表依赖编码加速器检测；未就绪时保留"检测中..."
+        if self._encoder_options:
+            return
+        try:
+            opts = _list_encoder_options()
+        except Exception:
+            return
+        if not opts:
+            return
+        self._encoder_options = list(opts)
+        sel = self.query_one("#encode_mode", PlainSelect)
+        sel.set_options([(label, i) for i, (label, _c) in enumerate(opts)])
+        # 默认第一项=自动（优先硬件）
+        sel.value = 0
 
     def _apply_decode_options(self):
         if not self._decode_backends:
