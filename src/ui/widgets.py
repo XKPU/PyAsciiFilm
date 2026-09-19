@@ -17,30 +17,20 @@ class PlainSelect(Select, inherit_bindings=False):
 
 
 class HighlightListItem(ListItem):
-    # 单击只移动高亮，不触发"选定"
+    # 记录最近一次点击的连击次数，供父列表判断是"选中"还是"选定"
 
-    class Clicked(Message):
-        # 仅表示"被单击"，由父 ListView 用于移动高亮
-
-        def __init__(self, item: "HighlightListItem") -> None:
-            self.item = item
-            super().__init__()
-
-    def _on_click(self, _: events.Click) -> None:
-        self.post_message(self.Clicked(self))
+    def _on_click(self, event: events.Click) -> None:
+        # Textual 沿 MRO 分发 Click，ListItem 的 _ChildClicked 必然发出，拦不住，故只记录连击次数
+        self._click_chain = getattr(event, "chain", 1)
 
 
 class ClickHighlightListView(ListView):
-    # 列表：单击=高亮，Enter=选定（配合 HighlightListItem 使用）
+    # 列表：单击=选中（只移动高亮），双击=选定（等价于 Enter）
 
-    @on(HighlightListItem.Clicked)
-    def _on_item_clicked(self, event: HighlightListItem.Clicked) -> None:
-        event.stop()
-        self.focus()
-        try:
-            self.index = self._nodes.index(event.item)
-        except ValueError:
-            pass
+    def _on_list_item__child_clicked(self, event) -> None:
+        # 基类会无条件 post Selected 且子类覆盖拦不住，故只标记本次是否双击，由 Screen 决定响应
+        item = event.item
+        self._selection_from_double_click = getattr(item, "_click_chain", 1) == 2
 
 
 def _display_width(text: str) -> int:

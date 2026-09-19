@@ -14,10 +14,11 @@ from utils.helpers import (
     _log_error,
     sorted_entries,
     format_datetime_ts as _format_datetime_ts,
+    format_file_size as _format_file_size,
     user_dirs as _user_dirs, list_drives as _list_drives,
     VIDEO_EXTS,
 )
-from ..widgets import KeyBar, safe_notify
+from ..widgets import ClickHighlightListView, HighlightListItem, KeyBar, safe_notify
 from .browser_nav import BrowserNav
 from .browser_config import ODB_CSS, ODB_ID_TO_ZONE, ODB_ZONE_HINTS
 from ..screens._helpers import _fallback_browser_dir
@@ -50,8 +51,7 @@ class OutputDirBrowser(Screen, BrowserNav):
 
     def __init__(self, initial=None, filename_hint="", ext="mp4"):
         super().__init__()
-        # 输出浏览器不记录、也不读取"上次位置"：永远以输入文件所在位置为准。
-        # 记录会让下一次导出莫名从上一次的输出目录开始，与输入视频无关。
+        # 不记录也不读取"上次位置"，永远以输入文件所在位置为准
         if initial and os.path.isdir(initial):
             self._current_path = initial
         elif initial and os.path.isfile(initial):
@@ -84,7 +84,7 @@ class OutputDirBrowser(Screen, BrowserNav):
                     with Horizontal(id="file-detail-row"):
                         with Vertical(id="file-list-col"):
                             yield Static("名称", id="file-header")
-                            yield ListView(id="file-list")
+                            yield ClickHighlightListView(id="file-list")
                         with Vertical(id="detail-panel"):
                             yield Static("详细信息", id="detail-header")
                             yield Static("", id="detail-content")
@@ -299,6 +299,9 @@ class OutputDirBrowser(Screen, BrowserNav):
 
     async def on_list_view_selected(self, event: ListView.Selected) -> None:
         if event.list_view.id == "file-list":
+            # 鼠标单击只移动高亮，不进入目录/选文件；双击或 Enter 才执行
+            if getattr(event.list_view, "_selection_from_double_click", None) is False:
+                return
             await self._select_current_file_item()
         elif event.list_view.id == "sidebar-list":
             await self._select_current_sidebar_item()
@@ -314,9 +317,23 @@ class OutputDirBrowser(Screen, BrowserNav):
             header = self.query_one("#detail-header", Static)
         except Exception:
             return
+        # 标题固定，与视频浏览器一致（原本这里显示图标+文件名）
+        header.update("详细信息")
+
         if not item_id:
             detail.update("")
-            header.update("详细信息")
+            return
+
+        # 选中项可能是 "parent-dir" 哨兵（返回上一级），也可能不存在于当前目录
+        if item_id == "parent-dir":
+            parent = os.path.dirname(self._current_path)
+            parent_name = os.path.basename(parent) or parent
+            mtime = _format_datetime_ts(os.path.getmtime(parent)) if os.path.exists(parent) else "未知"
+            detail.update(
+                f"文件夹名: {parent_name}\n"
+                f"路径: {parent}\n"
+                f"修改时间: {mtime}"
+            )
             return
 
         full_path = os.path.join(self._current_path, item_id)
@@ -324,25 +341,22 @@ class OutputDirBrowser(Screen, BrowserNav):
 
         if is_dir:
             mtime = _format_datetime_ts(os.path.getmtime(full_path)) if os.path.exists(full_path) else "未知"
-            header.update(f"📁 {item_id}")
             detail.update(
                 f"文件夹名: {item_id}\n"
                 f"路径: {full_path}\n"
                 f"修改时间: {mtime}"
             )
+        elif os.path.exists(full_path):
+            fs = os.path.getsize(full_path)
+            mtime = _format_datetime_ts(os.path.getmtime(full_path))
+            detail.update(
+                f"文件名: {item_id}\n"
+                f"路径: {full_path}\n"
+                f"修改时间: {mtime}\n"
+                f"大小: {_format_file_size(fs)}"
+            )
         else:
-            header.update(f"�� {item_id}")
-            if item_id == "parent-dir":
-                parent = os.path.dirname(self._current_path)
-                parent_name = os.path.basename(parent) or parent
-                mtime = _format_datetime_ts(os.path.getmtime(parent)) if os.path.exists(parent) else "未知"
-                detail.update(
-                    f"文件夹名: {parent_name}\n"
-                    f"路径: {parent}\n"
-                    f"修改时间: {mtime}"
-                )
-            else:
-                detail.update("")
+            detail.update("")
 
     # 驱动器列表视图的哨兵路径
     _DRIVES_SENTINEL = "Drives:\\"
@@ -358,7 +372,7 @@ class OutputDirBrowser(Screen, BrowserNav):
             self.query_one("#current-path", Static).update("当前：驱动器")
             self.query_one("#path-input", Input).value = self._DRIVES_SENTINEL
             for drive_name, drive_path in _list_drives():
-                item = ListItem(
+                item = HighlightListItem(
                     Label(f"📁 {drive_name}"),
                     id=_safe_id(drive_name),
                     classes="dir-item",
@@ -387,16 +401,16 @@ class OutputDirBrowser(Screen, BrowserNav):
         self._file_names = [os.path.basename(f) for f, _ in files]
 
         if has_parent:
-            file_list.append(ListItem(Label("📁 .."), id="parent-dir", classes="dir-item"))
+            file_list.append(HighlightListItem(Label("📁 .."), id="parent-dir", classes="dir-item"))
 
         for _, display_name in dirs:
-            item = ListItem(Label(f"📁 {display_name}"), id=_safe_id(display_name), classes="dir-item")
+            item = HighlightListItem(Label(f"📁 {display_name}"), id=_safe_id(display_name), classes="dir-item")
             item._entry_name = display_name
             file_list.append(item)
         for _, display_name in files:
             ext = os.path.splitext(display_name)[1].lower()
             icon = "🎞️" if ext in VIDEO_EXTS else "📄"
-            item = ListItem(Label(f"{icon} {display_name}"), id=_safe_id(display_name), classes="file-item")
+            item = HighlightListItem(Label(f"{icon} {display_name}"), id=_safe_id(display_name), classes="file-item")
             item._entry_name = display_name
             file_list.append(item)
 

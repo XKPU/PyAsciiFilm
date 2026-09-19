@@ -20,6 +20,18 @@ class BrowserNav:
             self._toggle_show_all()
             return
 
+        if key in ("ctrl+n",):
+            event.stop()
+            # 只有输出目录浏览器有文件名输入框；视频浏览器没有，保持无操作
+            if zone == "filename_input":
+                self._focus_file_list()
+                self._active_zone = "file_list"
+            elif hasattr(self, "_focus_filename_input"):
+                self._focus_filename_input()
+                self._active_zone = "filename_input"
+            self._update_keybar()
+            return
+
         if zone in ("path_input", "filename_input"):
             if key in ("ctrl+l",):
                 event.stop()
@@ -29,16 +41,6 @@ class BrowserNav:
                 else:
                     self._focus_path()
                     self._active_zone = "path_input"
-                self._update_keybar()
-                return
-            if key in ("ctrl+n",):
-                event.stop()
-                if zone == "filename_input":
-                    self._focus_file_list()
-                    self._active_zone = "file_list"
-                elif hasattr(self, "_focus_filename_input"):
-                    self._focus_filename_input()
-                    self._active_zone = "filename_input"
                 self._update_keybar()
                 return
             if key in ("ctrl+b",):

@@ -306,13 +306,10 @@ def play_video(video_path, use_color=False, with_audio=True,
             stop_audio()
         out.write("\033[0m\033[?25h\033[?1049l")
         out.flush()
+        # 日志已写入日志文件，此处不再往终端打；备用屏幕已退出，写 stderr 会闪出一片日志
         if _playback_logs:
             try:
-                sys.stderr.write("\n----- 播放日志 -----\n")
-                for _ln in _playback_logs:
-                    sys.stderr.write(_ln + "\n")
-                sys.stderr.write("-------------------\n")
-                sys.stderr.flush()
+                _log("播放日志:\n" + "\n".join(_playback_logs))
             except Exception:
                 pass
 
