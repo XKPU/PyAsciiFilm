@@ -10,18 +10,25 @@ from PIL import Image
 from audio.main import start_audio
 from core.main import generate_colored_frame, generate_grayscale_frame
 from decoder.main import FrameReader
-from utils.helpers import _log, _log_error
+from utils.helpers import _log, _log_error, _probe_video_meta, clean_fps
 
 
 _playback_logs = []
 
 
-def _frame_to_terminal_text(frame, width, use_color):
-    aspect = frame.shape[0] / frame.shape[1]
-    new_height = max(1, int(aspect * width * 0.5))
-    resized = np.array(Image.fromarray(frame).resize((width, new_height), Image.NEAREST))
+def _frame_to_terminal_text(frame, width, height, use_color):
+    if frame is None or frame.shape[0] == 0 or frame.shape[1] == 0:
+        return ""
+    width = max(1, int(width))
+    height = max(1, int(height))
+    # 解码时已让 ffmpeg 缩放到目标尺寸，正常情况无需再缩放；尺寸不符（如终端刚改变）时才用 PIL 兜底
+    if frame.shape[1] != width or frame.shape[0] != height:
+        img = Image.fromarray(frame).resize((width, height), Image.BILINEAR)
+        pixels = np.asarray(img, dtype=np.uint8)
+    else:
+        pixels = frame
+        img = None
     if use_color:
-        pixels = resized
         lum = (pixels[:, :, 0].astype(np.uint32) * 299
                + pixels[:, :, 1].astype(np.uint32) * 587
                + pixels[:, :, 2].astype(np.uint32) * 114
@@ -29,7 +36,9 @@ def _frame_to_terminal_text(frame, width, use_color):
         lum = lum.astype(np.uint8)
         frame_text = generate_colored_frame(pixels, lum)
     else:
-        gray = np.array(Image.fromarray(resized).convert('L'))
+        if img is None:
+            img = Image.fromarray(frame)
+        gray = np.asarray(img.convert("L"), dtype=np.uint8)
         frame_text = generate_grayscale_frame(gray)
     return "\n".join(line + "\033[K" for line in frame_text.split("\n"))
 
@@ -48,7 +57,7 @@ def _enable_windows_ansi():
 
 
 class _KeyReader:
-    """非阻塞键盘读取（三平台）"""
+    # 非阻塞键盘读取（三平台）
 
     def __init__(self):
         try:
@@ -132,6 +141,19 @@ def _create_progress_bar(current, total, width=50):
     return f"[{bar}] {percent:.1f}%"
 
 
+def _show_startup_notice(out, text):
+    # 在首帧出现前，居中显示一行缓冲提示，避免黑屏等待。音频要等 ffmpeg 解出并填满缓冲才出声（实测几十到几百毫秒，最坏会等满 3 秒超时），此期间终端本来是空的
+    try:
+        term_width, term_height = _get_terminal_size()
+        pad = max(0, (term_height // 2) - 1)
+        line = text.center(max(0, term_width))
+        out.write("\033[2J\033[H" + "\n" * pad + line)
+        out.write(f"\033[{term_height};1H")
+        out.flush()
+    except Exception:
+        pass
+
+
 def play_video(video_path, use_color=False, with_audio=True,
                target_fps=None, decode_args=None, ffmpeg_usage=None):
     _enable_windows_ansi()
@@ -148,35 +170,49 @@ def play_video(video_path, use_color=False, with_audio=True,
             pass
         _log(msg)
 
+    # 先探测元数据（不建管道），据此算好目标字符宽度，再把该宽度作为解码尺寸交给 ffmpeg 缩放
+    meta = _probe_video_meta(video_path) or {}
+    video_width = int(meta.get("width") or 0)
+    video_height = int(meta.get("height") or 0)
+    if video_width <= 0 or video_height <= 0:
+        print("错误: 无法读取视频尺寸")
+        return False
+    fps = clean_fps(meta.get("fps")) or 30.0
+    if target_fps and target_fps > 0:
+        fps = min(fps, target_fps)
+    frame_interval = 1.0 / max(fps, 1.0)
+    total_frames = int(meta.get("frame_count") or 0)
+    total_duration = meta.get("duration") or 0.0
+    if total_duration <= 0:
+        total_duration = total_frames / fps if fps else 0.0
+
+    term_width, term_height = _get_terminal_size()
+    ascii_width = _calculate_optimal_width(term_width, term_height,
+                                           video_width, video_height)
+    # 交给 ffmpeg 缩放到字符格对应的像素尺寸（宽=字符列数，高=字符行数）
+    decode_w = max(1, ascii_width)
+    decode_h = max(1, int(ascii_width * (video_height / video_width) * 0.5))
+
     try:
-        cap = FrameReader(video_path, log=_buf_log,
+        cap = FrameReader(video_path, log=_buf_log, force_size=(decode_w, decode_h),
+                          metadata=(video_width, video_height, fps, total_frames),
                           decode_args=decode_args, ffmpeg_usage=ffmpeg_usage)
     except Exception as e:
         _log_error(f"无法打开视频文件（{e}）")
         print(f"错误: 无法打开视频文件（{e}）")
         return False
 
-    fps = cap.fps or 30.0
-    if target_fps and target_fps > 0:
-        fps = min(fps, target_fps)
-    frame_interval = 1.0 / max(fps, 1.0)
-    video_width = int(cap.width)
-    video_height = int(cap.height)
-    total_frames = int(cap.frame_count)
-    total_duration = cap.duration if cap.duration and cap.duration > 0 else (
-        total_frames / fps if fps else 0.0)
+    # 先切到备用屏幕再启动音频：音频要等 ffmpeg 解码出第一块数据才出声，期间如果什么都不显示就是"黑屏卡住"。这里先把提示画出来
+    out.write("\033[?1049h\033[2J\033[?25l")
+    out.flush()
+    _show_startup_notice(out, "正在缓冲音频…")
 
     audio = start_audio(video_path, log=_buf_log) if with_audio else None
     stop_audio = audio[0] if audio else None
     get_audio_start = audio[1] if audio else None
+    no_audio = audio[2] if audio and len(audio) > 2 else None
     keys = _KeyReader()
 
-    out.write("\033[?1049h\033[2J\033[?25l")
-    out.flush()
-
-    term_width, term_height = _get_terminal_size()
-    ascii_width = _calculate_optimal_width(term_width, term_height,
-                                           video_width, video_height)
     last_width = ascii_width
 
     start = time.monotonic()
@@ -187,7 +223,10 @@ def play_video(video_path, use_color=False, with_audio=True,
             if astart is not None:
                 start = astart
                 break
-            time.sleep(0.01)
+            # 无音轨/解码已结束：不必再等，立刻开播
+            if no_audio is not None and no_audio():
+                break
+            time.sleep(0.005)
 
     idx = 0
     try:
@@ -205,9 +244,14 @@ def play_video(video_path, use_color=False, with_audio=True,
             if not ret:
                 break
 
+            ascii_height = max(1, int(ascii_width * (video_height / video_width) * 0.5))
             ascii_frame = _frame_to_terminal_text(frame, ascii_width,
-                                                   use_color)
+                                                   ascii_height, use_color)
             idx += 1
+
+            # 首帧：全屏清一次，抹掉"正在缓冲"提示的残留
+            if idx == 1:
+                out.write("\033[2J")
 
             color_mode_text = "全彩" if use_color else "灰度"
             estimate_h = int(ascii_width * (video_height / video_width) * 0.5)
@@ -238,9 +282,17 @@ def play_video(video_path, use_color=False, with_audio=True,
             if keys.quit_pressed():
                 break
 
+            # 按绝对时间轴对齐：第 idx 帧应显示在 start + idx*interval
             delay = (start + idx * frame_interval) - time.monotonic()
             if delay > 0:
                 time.sleep(delay)
+            elif delay < -frame_interval:
+                behind = int(-delay / frame_interval)
+                if behind > 0 and cap.skip_frames(behind):
+                    idx += behind
+                    # start 不变：下一帧的目标时刻仍按同一条时间轴计算，相当于把"错过的帧"从时间轴上抹掉，误差不再累积
+                    continue
+                # 流已结束或无法跳帧：退化为正常渲染剩余帧
     except KeyboardInterrupt:
         pass
     finally:

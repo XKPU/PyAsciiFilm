@@ -5,13 +5,11 @@ import threading
 import asyncio
 import traceback
 
-from utils.helpers import _clear_log, _log, _log_error, _app_dir, _init_ffmpeg
+from utils.helpers import _clear_log, _log, _log_error, _app_dir
 
 _clear_log()
 _LOG_FILE = os.path.join(_app_dir(), "pyasciifilm.log")
 _log(f"==== PyAsciiFilm 启动 ==== | Python {sys.version.split()[0]} | 平台 {sys.platform}")
-
-_init_ffmpeg()
 
 
 _ORIG_EXCEPTHOOK = sys.excepthook
@@ -65,11 +63,31 @@ def do_play(video_path, use_color, with_audio=True,
         _log(f"播放结束: {video_path}")
 
 
+def _startup_notice(text):
+    # 在进入 Textual 全屏前的黑屏期，给终端一个可见提示。Textual 启动要接管整个终端，在此之前有数百毫秒到数秒的 "什么都没显示"的空窗
+    try:
+        sys.stdout.write(text + "\n")
+        sys.stdout.flush()
+    except Exception:
+        pass
+
+
+def _startup_clear():
+    # 清掉启动提示，交还干净的屏幕给 Textual
+    try:
+        sys.stdout.write("\033[2J\033[H")
+        sys.stdout.flush()
+    except Exception:
+        pass
+
+
 def main():
     try:
         asyncio.get_running_loop().set_exception_handler(_asyncio_excepthook)
     except RuntimeError:
         pass
+
+    _startup_notice("正在初始化 PyAsciiFilm，请稍候…")
 
     from ui.main import MenuApp
 

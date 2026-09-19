@@ -67,8 +67,11 @@ class ExportProgressScreen(Screen):
             return
         self._dismissed = True
         self._cancel.set()
-        self.app.pop_screen()
-        self.app.pop_screen()
+        # 只弹出本屏（进度页）
+        try:
+            self.app.pop_screen()
+        except Exception:
+            pass
 
     def _worker(self):
         out_base = os.path.splitext(self.params["out"])[0] + "." + self.params["fmt"]
@@ -98,7 +101,7 @@ class ExportProgressScreen(Screen):
                     self._update_hint(exporting=False)
                 except Exception:
                     pass
-            self.app.call_from_thread(upd)
+            self._ui(upd)
 
         def on_log(msg):
             def upd():
@@ -116,6 +119,7 @@ class ExportProgressScreen(Screen):
                 on_progress=prog, on_done=done, on_log=on_log,
                 hwaccel=self.params.get("hwaccel", True),
                 ffmpeg_usage=self.params.get("ffmpeg_usage", 35),
+                encoder=self.params.get("encoder"),
                 cancel=self._cancel.is_set,
             )
         except Exception as e:

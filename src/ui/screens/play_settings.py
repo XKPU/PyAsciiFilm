@@ -9,7 +9,7 @@ from textual.containers import Vertical, Horizontal, ScrollableContainer
 
 from ..dialogs import SelectingScreen
 from ..widgets import KeyBar, PlainSelect
-from .._shared import _probe_video
+from ._helpers import _probe_video_metadata
 from ._screen_config import PLAY_ID_TO_ZONE, PLAY_ZONE_HINTS, _PLAY_INLINE
 
 
@@ -33,7 +33,7 @@ class PlaySettingsScreen(Screen):
     Label { width: auto; }
     Input { width: 1fr; }
     Select { width: 1fr; }
-    #srcinfo { margin: 0 0 1 0; }
+    #srcinfo { width: 1fr; margin: 0 0 1 0; }
     .hint { color: $text-muted; }
     .shortcut {
         color: $text-disabled;
@@ -218,7 +218,10 @@ class PlaySettingsScreen(Screen):
 
     def _set_video(self, video_path):
         self.video_path = video_path
-        self.src_w, self.src_h, self.src_fps = _probe_video(video_path)
+        _info = _probe_video_metadata(video_path) or {}
+        self.src_w = _info.get("width") or 0
+        self.src_h = _info.get("height") or 0
+        self.src_fps = _info.get("fps") or 0.0
         try:
             self.query_one("#srcinfo", Static).update(
                 f"视频: {os.path.basename(video_path)}  "

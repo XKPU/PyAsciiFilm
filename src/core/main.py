@@ -42,14 +42,7 @@ _ANSI_COLOR_ESCAPES_LIST = [str(e) for e in _ANSI_COLOR_ESCAPES]
 
 
 def generate_colored_frame(pixels, luminance):
-    """RLE 优化彩色帧：仅颜色变化时才输出 ANSI 转义码。
-
-    实现要点（性能）：
-    每格都发一次转义码约 9~10 ms/帧，RLE 后真实视频降到 ~1.2 ms/帧。
-    这里把颜色索引与亮度先 tolist() 成原生 Python int，内层循环直接
-    索引预先生成的转义字符串表，避免 numpy 标量装箱与切片再拼接的开销；
-    细节极多的画面（RLE 几乎失效）因此从 ~3.7 ms 降到 ~1.4 ms。
-    """
+    # RLE 优化彩色帧：仅颜色变化时才输出 ANSI 转义码。实现要点（性能）：每格都发一次转义码约 9~10 ms/帧，RLE 后真实视频降到 ~1.2 ms/帧
     ci = _color_index(pixels[..., 0], pixels[..., 1], pixels[..., 2])
     rows, cols = ci.shape
     if rows == 0 or cols == 0:

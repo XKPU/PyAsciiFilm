@@ -8,7 +8,7 @@ from ..widgets import KeyBar
 
 
 class BrowserNav:
-    """浏览器通用键盘导航"""
+    # 浏览器通用键盘导航
 
     _show_all = False
 

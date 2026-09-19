@@ -3,6 +3,7 @@ import json
 import logging
 import math
 import os
+import re
 import string
 import subprocess
 import sys
@@ -85,7 +86,7 @@ def _init_logger():
 
 
 def _clear_log():
-    """启动时清空日志文件"""
+    # 启动时清空日志文件
     try:
         with open(_LOG_PATH, "w", encoding="utf-8") as f:
             f.write("")
@@ -94,7 +95,7 @@ def _clear_log():
 
 
 def _log(msg, level=logging.INFO):
-    """文件日志（受 EnableFileLog 配置控制）"""
+    # 文件日志（受 EnableFileLog 配置控制）
     if not isinstance(msg, str):
         msg = str(msg)
     try:
@@ -135,73 +136,195 @@ _FFMPEG = None
 
 
 def _ffmpeg_exe():
+    # 解析随包 ffmpeg 的绝对路径
     global _FFMPEG
     if _FFMPEG is not None:
         return _FFMPEG
+
+    env = os.environ.get("IMAGEIO_FFMPEG_EXE")
+    if env and os.path.isfile(env):
+        _FFMPEG = env
+        return _FFMPEG
+
     try:
         import imageio_ffmpeg
-        _FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
-        os.environ.setdefault("IMAGEIO_FFMPEG_EXE", _FFMPEG)
+        # 临时摘掉失效的环境变量，让 get_ffmpeg_exe 走包内解析
+        if env:
+            os.environ.pop("IMAGEIO_FFMPEG_EXE", None)
+        try:
+            cand = imageio_ffmpeg.get_ffmpeg_exe()
+        finally:
+            if env:
+                os.environ["IMAGEIO_FFMPEG_EXE"] = env
+        if cand and os.path.isfile(cand):
+            _FFMPEG = cand
+        else:
+            _FFMPEG = False
     except Exception:
         _FFMPEG = False
     return _FFMPEG or None
 
 
 def _init_ffmpeg():
+    # 解析并校验随包 ffmpeg，作为全程序唯一的 ffmpeg 来源。不再依赖 imageio：解码与元数据都直接用随包二进制，因此这里只需确保它真实存在且可用
     ff = _ffmpeg_exe()
     if not ff:
         raise RuntimeError("未找到随包 ffmpeg，程序无法运行。请确保 imageio-ffmpeg 已正确安装。")
-    os.environ.setdefault("IMAGEIO_FFMPEG_EXE", ff)
     return ff
 
 
-# ---- imageio 视频元数据 ----
-def _imageio_probe(path):
-    """用 imageio 的 FFMPEG 插件读取视频元数据。
+# ---- 视频元数据（随包 ffmpeg） ----
 
-    返回 {"width","height","fps","frame_count","duration"}，失败返回 None。
 
-    要点：
-    - 插件名必须是大写 "FFMPEG"：imageio 对插件名大小写敏感，
-      传 "ffmpeg" 会抛 ValueError。
-    - ffmpeg 插件的 nframes 在非 loop 模式下恒为 inf（见 imageio
-      plugins/ffmpeg.py 中 _nframes 的初始化），因此总帧数由
-      duration * fps 推算，时长直接取 duration 字段。
-    """
+def _count_frames(path, limit=None):
+    # 遍历解码统计帧数（容器不记录时长时使用，代价较高）
+    ff = _ffmpeg_exe()
+    if not ff:
+        return 0
+    proc = None
     try:
-        import imageio.v3 as iio
-        meta = iio.immeta(path, plugin="FFMPEG")
-        if not meta:
-            return None
-        size = meta.get("source_size") or meta.get("size") or (0, 0)
-        w = int(size[0] or 0)
-        h = int(size[1] or 0)
+        proc = subprocess.Popen(
+            [ff, "-nostdin", "-hide_banner", "-loglevel", "error",
+             "-i", path, "-f", "rawvideo", "-pix_fmt", "gray", "-"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            creationflags=_CREATE_NO_WINDOW,
+        )
+        meta = _ffmpeg_probe(path)
+        w = (meta or {}).get("width") or 0
+        h = (meta or {}).get("height") or 0
         if w <= 0 or h <= 0:
-            return None
-        try:
-            fps = float(meta.get("fps") or 0)
-        except (TypeError, ValueError):
-            fps = 0.0
-        try:
-            duration = float(meta.get("duration") or 0)
-        except (TypeError, ValueError):
-            duration = 0.0
-        nframes = meta.get("nframes")
-        if isinstance(nframes, int) and nframes > 0:
-            n = nframes
-            if duration <= 0 and fps > 0:
-                duration = n / fps
-        else:
-            n = int(round(duration * fps)) if duration > 0 and fps > 0 else 0
-        return {
-            "width": w,
-            "height": h,
-            "fps": fps,
-            "frame_count": n,
-            "duration": duration,
-        }
+            return 0
+        fbytes = w * h
+        n = 0
+        while True:
+            raw = proc.stdout.read(fbytes)
+            if len(raw) < fbytes:
+                break
+            n += 1
+            if limit is not None and n >= limit:
+                break
+        return n
+    except Exception:
+        return 0
+    finally:
+        if proc is not None:
+            try:
+                proc.stdout.close()
+            except Exception:
+                pass
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+
+
+# 用随包 ffmpeg 解析 -i 输出（imageio 拒绝的容器走这条）
+_RE_DURATION = re.compile(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)")
+_RE_FPS = re.compile(r"(\d+(?:\.\d+)?)\s*fps")
+_RE_SIZE = re.compile(r"Stream.*?Video.*?(\d{2,})x(\d{2,})")
+_RE_NBFRAMES = re.compile(r"nb_frames\s*=\s*(\d+)")
+# 视频流识别：只认 "Stream #0:1: Video: " 这种真正的视频流行
+_RE_STREAM_LINE = re.compile(r"Stream #\d+:\d+.*?: Video: ")
+_RE_RES = re.compile(r"(\d{2,})x(\d{2,})")
+_RE_ATTACHED = re.compile(r"attached pic", re.IGNORECASE)
+_RE_ROTATE = re.compile(r"rotation of (-?\d+(?:\.\d+)?) degrees")
+
+
+def _pick_video_size(txt):
+    # 从 `ffmpeg -i` 输出里挑出正片的分辨率，返回 (w, h) 或 None
+    candidates = []
+    for line in (txt or "").splitlines():
+        if not _RE_STREAM_LINE.search(line):
+            continue
+        mr = _RE_RES.search(line)
+        if not mr:
+            continue
+        w, h = int(mr.group(1)), int(mr.group(2))
+        if w <= 0 or h <= 0:
+            continue
+        candidates.append((w, h, "(default)" in line, bool(_RE_ATTACHED.search(line))))
+    if not candidates:
+        return None
+    for w, h, is_default, _att in candidates:
+        if is_default and not _att:
+            return w, h
+    for w, h, _d, att in candidates:
+        if not att:
+            return w, h
+    return candidates[0][0], candidates[0][1]
+
+
+def _ffmpeg_probe(path):
+    # 用随包 ffmpeg 读取元数据，失败返回 None
+    ff = _ffmpeg_exe()
+    if not ff:
+        return None
+    try:
+        res = subprocess.run(
+            [ff, "-hide_banner", "-i", path],
+            stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+            text=True, creationflags=_CREATE_NO_WINDOW,
+        )
+        txt = res.stderr or ""
     except Exception:
         return None
+
+    size = _pick_video_size(txt)
+    if size is None:
+        return None
+    w, h = size
+    # 旋转 90/270 度的视频，实际显示宽高要对调
+    mr = _RE_ROTATE.search(txt)
+    if mr:
+        try:
+            if abs(float(mr.group(1))) % 180 == 90:
+                w, h = h, w
+        except ValueError:
+            pass
+
+    fps = 0.0
+    mf = _RE_FPS.search(txt)
+    if mf:
+        try:
+            fps = clean_fps(float(mf.group(1)))
+        except ValueError:
+            fps = 0.0
+
+    duration = 0.0
+    md = _RE_DURATION.search(txt)
+    if md:
+        try:
+            duration = (int(md.group(1)) * 3600 + int(md.group(2)) * 60
+                        + float(md.group(3)))
+        except ValueError:
+            duration = 0.0
+
+    n = 0
+    mn = _RE_NBFRAMES.search(txt)
+    if mn:
+        n = int(mn.group(1))
+    if not n and duration > 0 and fps > 0:
+        n = int(round(duration * fps))
+
+    return {
+        "width": w,
+        "height": h,
+        "fps": fps,
+        "frame_count": n,
+        "duration": duration,
+    }
+
+
+def _probe_video_meta(path, count_frames=False):
+    # 统一的视频元数据入口（随包 ffmpeg）
+    info = _ffmpeg_probe(path)
+    if info is None:
+        return None
+    if count_frames and info["frame_count"] <= 0:
+        n = _count_frames(path)
+        if n > 0:
+            info["frame_count"] = n
+    return info
 
 
 def _forward_stderr(proc, log):
@@ -307,26 +430,30 @@ def _probe_hw_accel():
         ("h264_vaapi", ["-vf", "format=nv12,hwupload", "-pix_fmt", "vaapi"]),
         ("h264_videotoolbox", ["-allow_sw", "1", "-pix_fmt", "yuv420p"]),
     ]
-    for enc_name, enc_params in _H264_CANDIDATES:
-        if enc_name in listed_encoders and _validate_encoder(ff, enc_name, enc_params):
-            encode_h264.append((enc_name, enc_params))
+    # 编码器验证：每个候选都要跑"编码+回读"两次子进程（实测约 240ms），串行做 5 个要 1 秒以上。各候选彼此独立，并行验证
+    present = [(n, p) for n, p in _H264_CANDIDATES if n in listed_encoders]
+    if present:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(4, len(present))) as ex:
+            results = list(ex.map(
+                lambda np: (np, _validate_encoder(ff, np[0], np[1])),
+                present,
+            ))
+        encode_h264 = [np for np, ok in results if ok]
+    else:
+        encode_h264 = []
 
     _HW_ACCEL = {"decode": decode, "encode_h264": encode_h264}
     return _HW_ACCEL
 
 
 # ---- 解码后端验证 ----
-def _verify_decode_backend(decode_args):
-    if not decode_args:
-        return True
-    ff = _ffmpeg_exe()
-    if not ff:
-        return False
+def _make_probe_clip(ff):
+    # 生成一次探测用的小视频，供所有后端复用。原先每个后端各建一次临时文件（还要跑一次编码），5 个后端就是 5 次多余编码。现在只生成一次
     import tempfile
-    tp = None
     try:
-        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
-            tp = f.name
+        fd, tp = tempfile.mkstemp(suffix=".mp4")
+        os.close(fd)
         r = subprocess.run(
             [ff, "-y", "-hide_banner", "-f", "lavfi",
              "-i", "testsrc=duration=1:size=64x64:rate=1",
@@ -336,10 +463,26 @@ def _verify_decode_backend(decode_args):
             creationflags=_CREATE_NO_WINDOW,
         )
         if r.returncode != 0 or not os.path.isfile(tp):
-            return False
+            try:
+                os.remove(tp)
+            except OSError:
+                pass
+            return None
+        return tp
+    except Exception:
+        return None
+
+
+def _verify_decode_backend_with(ff, decode_args, clip):
+    # 用已有探测片段验证某个解码后端
+    if not decode_args:
+        return True
+    if not ff or not clip:
+        return False
+    try:
         cmd = [ff, "-nostdin", "-hide_banner", "-loglevel", "error"] + \
             list(decode_args) + \
-            ["-i", tp, "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
+            ["-i", clip, "-f", "rawvideo", "-pix_fmt", "bgr24", "-"]
         p = subprocess.run(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             timeout=15,
@@ -348,12 +491,25 @@ def _verify_decode_backend(decode_args):
         return p.returncode == 0 and len(p.stdout) >= 64 * 64 * 3
     except Exception:
         return False
+
+
+def _verify_decode_backend(decode_args):
+    # 单个后端自检（自建探测片段，保留给外部单独调用）
+    if not decode_args:
+        return True
+    ff = _ffmpeg_exe()
+    if not ff:
+        return False
+    clip = _make_probe_clip(ff)
+    if not clip:
+        return False
+    try:
+        return _verify_decode_backend_with(ff, decode_args, clip)
     finally:
-        if tp and os.path.isfile(tp):
-            try:
-                os.remove(tp)
-            except Exception:
-                pass
+        try:
+            os.remove(clip)
+        except OSError:
+            pass
 
 
 def _list_verified_decode_backends():
@@ -370,16 +526,70 @@ def _list_verified_decode_backends():
     }
     _PRIORITY = {"cuda": 0, "dxva2": 10, "d3d11va": 11, "d3d12va": 12, "qsv": 13,
                  "vaapi": 14, "videotoolbox": 15}
-    for args in hw["decode"]:
+
+    candidates = hw["decode"]
+    ff = _ffmpeg_exe()
+    clip = _make_probe_clip(ff) if (ff and candidates) else None
+    try:
+        if clip:
+            # 各后端互不依赖，并行验证（每个都是一次独立短解码）
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=min(4, len(candidates))) as ex:
+                oks = list(ex.map(
+                    lambda a: _verify_decode_backend_with(ff, a, clip),
+                    candidates,
+                ))
+        else:
+            oks = [False] * len(candidates)
+    finally:
+        if clip:
+            try:
+                os.remove(clip)
+            except OSError:
+                pass
+
+    for args, ok in zip(candidates, oks):
+        if not ok:
+            continue
         name = args[-1]
         label = _LABELS.get(name, name.upper())
-        if _verify_decode_backend(args):
-            result.append((label, args, _PRIORITY.get(name, 99)))
+        result.append((label, args, _PRIORITY.get(name, 99)))
+
     result.sort(key=lambda x: x[2])
     hw_items = [(label, args) for label, args, _p in result]
     cuda = [item for item in hw_items if "CUDA" in item[0].upper()]
     others = [item for item in hw_items if "CUDA" not in item[0].upper()]
     return cuda + others + [("软件解码", None)]
+
+
+# ---- 编码模式 ---- 各硬件编码器在界面上的显示名
+_ENCODER_LABELS = {
+    "h264_nvenc": "NVENC (NVIDIA)",
+    "h264_qsv": "QSV (Intel)",
+    "h264_amf": "AMF (AMD)",
+    "h264_vaapi": "VAAPI",
+    "h264_videotoolbox": "VideoToolbox (Apple)",
+    "libx264": "软件编码 (libx264)",
+}
+
+
+def _list_encoder_options():
+    # 列出编码模式选项：[("自动", None), (标签, 编码器名), ...]。第一项固定为「自动」——保持现有的自动挑选行为（优先硬件、失败回退软件）
+    options = [("自动（优先硬件）", None)]
+    try:
+        hw = _probe_hw_accel()
+        for codec, _params in hw.get("encode_h264", []):
+            label = _ENCODER_LABELS.get(codec, codec)
+            options.append((label, codec))
+    except Exception:
+        pass
+    options.append((_ENCODER_LABELS["libx264"], "libx264"))
+    return options
+
+
+def _encoder_label(codec):
+    # 编码器名 -> 显示名（用于日志与提示）
+    return _ENCODER_LABELS.get(codec, codec or "自动")
 
 
 # ---- 视频文件类型 ----
@@ -390,14 +600,14 @@ VIDEO_EXTS = frozenset({
 
 
 def is_video_file(name):
-    """检查文件名是否为支持的视频格式"""
+    # 检查文件名是否为支持的视频格式
     _, ext = os.path.splitext(name)
     return ext.lower() in VIDEO_EXTS
 
 
 # ---- 文件系统工具 ----
 def user_dirs():
-    """返回用户目录快捷访问列表：[(显示名, 路径), ...]（三平台）"""
+    # 返回用户目录快捷访问列表：[(显示名, 路径), ...]（三平台）
     home = Path.home()
     candidates = [
         ("桌面", home / "Desktop"),
@@ -414,7 +624,7 @@ def user_dirs():
 
 
 def list_drives():
-    """枚举可用驱动器 / 挂载点（三平台）"""
+    # 枚举可用驱动器 / 挂载点（三平台）
     if sys.platform == "win32":
         drives = []
         for letter in string.ascii_uppercase:
@@ -445,10 +655,7 @@ def list_drives():
 
 
 def sorted_entries(path, video_only=False, hide_hidden=False):
-    """列出目录内容，目录在前、文件在后，各自按字母序。
-    返回 (dirs, files)，每项为 (sort_key, name, is_dir)。
-    video_only=True 时只返回视频文件。
-    hide_hidden=True 时隐藏以 . 开头的文件/目录。"""
+    # 列出目录内容，目录在前、文件在后，各自按字母序。返回 (dirs, files)，每项为 (sort_key, name, is_dir)
     try:
         entries = list(os.scandir(path))
     except PermissionError:
@@ -476,7 +683,7 @@ def sorted_entries(path, video_only=False, hide_hidden=False):
 
 # ---- 格式化工具 ----
 def format_file_size(size_bytes):
-    """将字节数转换为人类可读的文件大小"""
+    # 将字节数转换为人类可读的文件大小
     if size_bytes < 1024:
         return f"{size_bytes} B"
     elif size_bytes < 1024 * 1024:
@@ -488,7 +695,7 @@ def format_file_size(size_bytes):
 
 
 def format_datetime_ts(timestamp):
-    """将时间戳格式化为 YYYY-MM-DD HH:MM:SS"""
+    # 将时间戳格式化为 YYYY-MM-DD HH:MM:SS
     try:
         return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
     except Exception:
@@ -512,7 +719,6 @@ _DEFAULT_CONFIG = {
 }
 
 LAST_VIDEO_DIR_KEY = "LastVideoDir"
-LAST_EXPORT_DIR_KEY = "LastExportDir"
 
 
 def _ensure_config():

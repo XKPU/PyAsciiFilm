@@ -5,7 +5,7 @@ import time
 
 import numpy as np
 from utils.helpers import (
-    clean_fps, _imageio_probe,
+    clean_fps,
     _forward_stderr, _ffmpeg_exe, _probe_hw_accel,
     _CREATE_NO_WINDOW, _log, _decode_threads,
 )
@@ -36,7 +36,7 @@ def _fps_flag():
 
 
 class FrameReader:
-    """视频帧读取器：imageio/ffmpeg 优先，失败回退 ffmpeg 管道"""
+    # 视频帧读取器：统一使用随包 ffmpeg 管道解码
 
     def __init__(self, video_path, log=None, force_ffmpeg=False, force_size=None,
                  metadata=None, hwaccel=True, decode_args=None, ffmpeg_usage=None):
@@ -47,8 +47,6 @@ class FrameReader:
         self._force_size = force_size
         self._hwaccel = hwaccel
         self._decode_args = tuple(decode_args) if decode_args else None
-        self._reader = None
-        self._reader_idx = 0
         self._proc = None
         self._frame_bytes = 0
         self._pipe_w = self._pipe_h = 0
@@ -59,31 +57,18 @@ class FrameReader:
         self.frame_count = 0
         self.duration = 0.0
         if metadata is not None:
+            # metadata 是**源视频**的真实宽高，必须原样保留：调用方要据此按纵横比算显示尺寸
             self.width, self.height, self.fps, self.frame_count = metadata
             if self._force_size is not None:
                 tw, th = self._force_size
                 if tw > 0 and th > 0:
-                    self.width, self.height = tw, th
                     self._scale_w, self._scale_h = tw, th
             self._launch_ffmpeg()
         else:
             self._open()
 
     def _open(self):
-        if not self._force:
-            try:
-                import imageio.v3 as iio
-                info = _imageio_probe(self.path)
-                if info:
-                    self._reader = iio.imiter(self.path, plugin="FFMPEG")
-                    self._reader_idx = 0
-                    self.width, self.height = info["width"], info["height"]
-                    self.fps = clean_fps(info["fps"])
-                    self.frame_count = info["frame_count"]
-                    self.duration = info["duration"]
-                    return
-            except Exception:
-                pass
+        # 统一走随包 ffmpeg 管道：imageio 的解码路径已移除 （慢 2.15x、拒绝部分容器、打包后解析不到二进制）
         self._open_ffmpeg()
 
     def _open_ffmpeg(self):
@@ -200,30 +185,33 @@ class FrameReader:
             if not n and fps:
                 n = int(dur * fps)
 
-        if w <= 0 or h <= 0:
-            info = _imageio_probe(self.path)
-            if info:
-                w = info["width"] or w
-                h = info["height"] or h
-                fps = clean_fps(info["fps"]) or fps
-                n = info["frame_count"] or n
-                dur = info["duration"] or dur
 
         return w, h, fps, n, dur
 
     def read(self):
-        if self._reader is not None:
-            try:
-                frame = next(self._reader)
-                self._reader_idx += 1
-                return True, frame
-            except StopIteration:
-                return False, None
+        # _frame_bytes 为 0 时会得到 (0,0,3) 的假帧，渲染时按宽度相除直接 ZeroDivisionError
+        if self._frame_bytes <= 0:
+            return False, None
         raw = self._proc.stdout.read(self._frame_bytes)
         if len(raw) < self._frame_bytes:
             return False, None
         frame = np.frombuffer(raw, dtype=np.uint8).reshape(self._pipe_h, self._pipe_w, 3)
         return True, frame
+
+    def skip_frames(self, count):
+        # 丢弃 count 帧（不构造图像），用于播放落后时追赶时间轴。只从管道读走字节并丢弃，比逐帧 read + 渲染便宜得多
+        if count <= 0:
+            return True
+        nbytes = count * self._frame_bytes
+        if nbytes <= 0:
+            return False
+        got = 0
+        while got < nbytes:
+            chunk = self._proc.stdout.read(nbytes - got)
+            if not chunk:
+                return False
+            got += len(chunk)
+        return True
 
     def _kill_proc(self):
         if self._proc is None:
@@ -246,12 +234,6 @@ class FrameReader:
         self._proc = None
 
     def release(self):
-        if self._reader is not None:
-            try:
-                self._reader.close()
-            except Exception:
-                pass
-            self._reader = None
         if self._proc is not None:
             try:
                 self._proc.stdout.close()

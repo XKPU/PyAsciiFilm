@@ -84,7 +84,7 @@ class SelectingScreen(Screen):
             pass
 
     def _pick(self):
-        """打开文件浏览器（Textual 原生）"""
+        # 打开文件浏览器（Textual 原生）
         from .filebrowser.main import VideoFileBrowser
         browser = VideoFileBrowser(initial=self._initial)
 

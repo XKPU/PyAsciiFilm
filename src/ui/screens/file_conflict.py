@@ -5,7 +5,7 @@ from textual.containers import Vertical, Horizontal
 
 
 class FileConflictScreen(Screen):
-    """文件已存在确认：替换 / 更改名称 / 取消"""
+    # 文件已存在确认：替换 / 更改名称 / 取消
 
     CSS = """
     Screen { align: center middle; }

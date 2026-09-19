@@ -2,20 +2,49 @@
 
 import unicodedata
 
+from textual import events, on
 from textual.binding import Binding
-from textual.widgets import Select, Static
+from textual.message import Message
+from textual.widgets import ListItem, ListView, Select, Static
 
 
 class PlainSelect(Select, inherit_bindings=False):
-    """普通下拉菜单：不响应↑/↓，仅Enter/Space展开"""
+    # 普通下拉菜单：不响应↑/↓，仅Enter/Space展开
 
     BINDINGS = [
         Binding("enter,space", "show_overlay", "展开菜单", show=False),
     ]
 
 
+class HighlightListItem(ListItem):
+    # 单击只移动高亮，不触发"选定"
+
+    class Clicked(Message):
+        # 仅表示"被单击"，由父 ListView 用于移动高亮
+
+        def __init__(self, item: "HighlightListItem") -> None:
+            self.item = item
+            super().__init__()
+
+    def _on_click(self, _: events.Click) -> None:
+        self.post_message(self.Clicked(self))
+
+
+class ClickHighlightListView(ListView):
+    # 列表：单击=高亮，Enter=选定（配合 HighlightListItem 使用）
+
+    @on(HighlightListItem.Clicked)
+    def _on_item_clicked(self, event: HighlightListItem.Clicked) -> None:
+        event.stop()
+        self.focus()
+        try:
+            self.index = self._nodes.index(event.item)
+        except ValueError:
+            pass
+
+
 def _display_width(text: str) -> int:
-    """文本终端显示宽度（全角占2列）"""
+    # 文本终端显示宽度（全角占2列）
     w = 0
     for ch in text:
         eaw = unicodedata.east_asian_width(ch)
@@ -24,13 +53,13 @@ def _display_width(text: str) -> int:
 
 
 def safe_notify(screen, message, **kwargs):
-    """显示通知并延迟刷新屏幕，修复 overlay 渲染缺字问题"""
+    # 显示通知并延迟刷新屏幕，修复 overlay 渲染缺字问题
     screen.app.notify(message, **kwargs)
     screen.set_timer(0.15, screen.refresh)
 
 
 class KeyBar(Static):
-    """快捷键提示栏（超宽时自动横向滚动）"""
+    # 快捷键提示栏（超宽时自动横向滚动）
 
     SCROLL_INTERVAL = 0.15
     GAP = "     "

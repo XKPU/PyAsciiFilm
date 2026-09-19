@@ -1,4 +1,3 @@
-"""VideoFileBrowser / OutputDirBrowser 共享的 CSS 和键盘配置"""
 
 # ── VideoFileBrowser 配置 ──
 

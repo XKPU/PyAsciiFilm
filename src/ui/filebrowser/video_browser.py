@@ -17,14 +17,17 @@ from utils.helpers import (
     format_file_size, format_datetime_ts,
     LAST_VIDEO_DIR_KEY, VIDEO_EXTS,
 )
-from ..widgets import KeyBar, safe_notify
+from ..widgets import ClickHighlightListView, HighlightListItem, KeyBar, safe_notify
 from .browser_nav import BrowserNav
 from .browser_config import FB_CSS, FB_ID_TO_ZONE, FB_ZONE_HINTS
-from ..screens._helpers import _format_duration, _probe_video_metadata, _load_last_dir
+from ..screens._helpers import (
+    _format_duration, _probe_video_metadata, _peek_video_metadata,
+    _probe_for_confirm, _load_last_dir, _fallback_browser_dir,
+)
 
 
 def _safe_id(name: str) -> str:
-    """将任意字符串转为合法的 Textual id"""
+    # 将任意字符串转为合法的 Textual id
     import re as _re, hashlib
     clean = _re.sub(r"[^a-zA-Z0-9]", "-", name).strip("-")
     if not clean:
@@ -37,7 +40,7 @@ def _safe_id(name: str) -> str:
 
 
 class VideoFileBrowser(Screen, BrowserNav):
-    """Textual 视频文件浏览器"""
+    # Textual 视频文件浏览器
 
     BINDINGS: list = []
     CSS = FB_CSS
@@ -50,11 +53,16 @@ class VideoFileBrowser(Screen, BrowserNav):
             self._current_path = initial
         else:
             last = _load_last_dir()
-            try:
-                self._current_path = last if last and os.path.isdir(last) else os.path.expanduser("~")
-            except Exception:
-                self._current_path = os.path.expanduser("~")
+            if last and os.path.isdir(last):
+                self._current_path = last
+            else:
+                self._current_path = _fallback_browser_dir()
         self._active_zone = "file_list"
+        self._detail_item = None
+        self._meta_pending = None
+        self._destroyed = False
+        self._detail_item = None
+        self._meta_pending = None
 
     _ID_TO_ZONE = FB_ID_TO_ZONE
     _ZONE_HINTS = FB_ZONE_HINTS
@@ -74,7 +82,7 @@ class VideoFileBrowser(Screen, BrowserNav):
                     with Horizontal(id="file-detail-row"):
                         with Vertical(id="file-list-col"):
                             yield Static("文件列表", id="file-header")
-                            yield ListView(id="file-list")
+                            yield ClickHighlightListView(id="file-list")
                         with Vertical(id="detail-panel"):
                             yield Static("详细信息", id="detail-header")
                             yield Static("", id="detail-content")
@@ -95,7 +103,7 @@ class VideoFileBrowser(Screen, BrowserNav):
         asyncio.create_task(self._populate_sidebar())
 
     def on_unmount(self) -> None:
-        pass
+        self._destroyed = True
 
     def on_resize(self, event) -> None:
         self._toggle_detail_panel()
@@ -142,7 +150,7 @@ class VideoFileBrowser(Screen, BrowserNav):
                     self._update_keybar()
 
     async def _select_current_file_item(self) -> None:
-        """选中文件列表中的当前项"""
+        # 选中文件列表中的当前项
         file_list = self.query_one("#file-list", ListView)
         if file_list.index is None or file_list.index >= len(file_list):
             return
@@ -156,7 +164,7 @@ class VideoFileBrowser(Screen, BrowserNav):
             await self._confirm()
 
     async def _select_current_sidebar_item(self):
-        """选中侧栏中的当前项"""
+        # 选中侧栏中的当前项
         sidebar = self.query_one("#sidebar-list", ListView)
         if sidebar.index is None:
             return
@@ -277,12 +285,13 @@ class VideoFileBrowser(Screen, BrowserNav):
     async def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
         if event.list_view.id == "file-list" and event.item is not None:
             entry_name = getattr(event.item, "_entry_name", None)
+            self._detail_item = entry_name
             self._update_detail_panel(entry_name)
 
     # ── 详细信息面板 ──
 
     def _update_detail_panel(self, item_id: str) -> None:
-        """更新右侧详细信息面板（标题固定为"详细信息"）"""
+        # 更新右侧详细信息面板（标题固定为"详细信息"）元数据探测约 50~120 ms（要起 ffmpeg 子进程），绝不能在 UI 线程做。这里先用缓存即时渲染
         try:
             detail = self.query_one("#detail-content", Static)
             header = self.query_one("#detail-header", Static)
@@ -312,13 +321,23 @@ class VideoFileBrowser(Screen, BrowserNav):
         is_video = not is_dir and os.path.splitext(item_id)[1].lower() in VIDEO_EXTS
 
         if is_video:
-            meta = _probe_video_metadata(full_path)
             fs = os.path.getsize(full_path) if os.path.isfile(full_path) else 0
             mtime = format_datetime_ts(os.path.getmtime(full_path)) if os.path.exists(full_path) else "未知"
-            lines = [
+            head = [
                 f"文件名: {item_id}",
                 f"路径: {full_path}",
             ]
+            tail = [
+                f"修改时间: {mtime}",
+                f"大小: {format_file_size(fs)}",
+            ]
+            meta = _peek_video_metadata(full_path)
+            if meta is False:
+                # 缓存未命中：先渲染已知信息，后台补全，不阻塞按键
+                detail.update("\n".join(head + ["媒体信息: 读取中…"] + tail))
+                self._request_metadata_async(full_path, item_id)
+                return
+            lines = head
             if meta:
                 lines += [
                     f"帧率: {meta.get('fps', 0):.2f} fps",
@@ -327,11 +346,9 @@ class VideoFileBrowser(Screen, BrowserNav):
                     f"总帧数: {meta.get('frame_count', 0)}",
                     f"时长: {_format_duration(meta.get('duration', 0) or 0)}",
                 ]
-            lines += [
-                f"修改时间: {mtime}",
-                f"大小: {format_file_size(fs)}",
-            ]
-            detail.update("\n".join(lines))
+            else:
+                lines.append("媒体信息: 无法读取")
+            detail.update("\n".join(lines + tail))
         elif is_dir:
             mtime = format_datetime_ts(os.path.getmtime(full_path)) if os.path.exists(full_path) else "未知"
             detail.update(
@@ -348,6 +365,26 @@ class VideoFileBrowser(Screen, BrowserNav):
                 f"修改时间: {mtime}\n"
                 f"大小: {format_file_size(fs)}"
             )
+
+    def _request_metadata_async(self, full_path: str, item_id: str) -> None:
+        # 后台线程探测元数据，完成后回主线程刷新面板
+        if getattr(self, "_meta_pending", None) == full_path:
+            return
+        self._meta_pending = full_path
+
+        def _probe_then_refresh() -> None:
+            try:
+                _probe_video_metadata(full_path)
+            except Exception:
+                pass
+            finally:
+                self._meta_pending = None
+            # 结果已入缓存；仅当当前仍停留在该文件时才刷新，避免覆盖新选择
+            if not self._destroyed and getattr(self, "_detail_item", None) == item_id:
+                self.call_after_refresh(self._update_detail_panel, item_id)
+
+        self.run_worker(_probe_then_refresh, thread=True, exclusive=True,
+                        group="video-meta")
 
     # ── 文件列表刷新 ──
 
@@ -476,24 +513,25 @@ class VideoFileBrowser(Screen, BrowserNav):
 
     async def _confirm(self):
         file_list = self.query_one("#file-list", ListView)
-        if file_list.index is not None and file_list.index < len(file_list):
-            item = file_list.children[file_list.index]
-            item_class = getattr(item, "classes", "")
-            if "dir-item" in item_class:
-                return
-            entry_name = getattr(item, "_entry_name", None)
-            sel = os.path.join(self._current_path, entry_name) if entry_name else ""
-
-            if sel and os.path.isfile(sel):
-                meta = _probe_video_metadata(sel)
-                if meta is None or meta.get("duration", 0) <= 0:
-                    safe_notify(self,"无法读取有效视频时长，请选择有效的视频文件", severity="warning")
-                    return
-
-            self._save_last_dir()
-            self.dismiss(sel)
-        else:
+        if file_list.index is None or file_list.index >= len(file_list):
             self._cancel()
+            return
+        item = file_list.children[file_list.index]
+        item_class = getattr(item, "classes", "")
+        if "dir-item" in item_class:
+            return
+        entry_name = getattr(item, "_entry_name", None)
+        sel = os.path.join(self._current_path, entry_name) if entry_name else ""
+
+        if sel and os.path.isfile(sel):
+            # 放线程里探测，避免确认瞬间冻结 UI（约 50~120 ms）
+            meta = await asyncio.to_thread(_probe_for_confirm, sel)
+            if meta is None:
+                safe_notify(self, "无法读取该视频，请选择有效的视频文件", severity="warning")
+                return
+
+        self._save_last_dir()
+        self.dismiss(sel)
 
     def _cancel(self):
         self.dismiss(None)

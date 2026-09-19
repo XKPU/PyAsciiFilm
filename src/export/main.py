@@ -38,8 +38,9 @@ def _make_log(on_log):
 
 def export_video(video_path, output_path, target_w, target_h, target_fps,
                  use_color=False, fmt="mp4", on_progress=None, on_done=None,
-                 on_log=None, hwaccel=True, ffmpeg_usage=None, cancel=None):
-    """单遍导出：边解码边按目标帧率抽样、逐帧渲染编码"""
+                 on_log=None, hwaccel=True, ffmpeg_usage=None, cancel=None,
+                 encoder=None):
+    # 单遍导出：边解码边按目标帧率抽样、逐帧渲染编码
     global ASCII_CHARS, _GRAY_LOOKUP
     ASCII_CHARS = reload_charset()
     _GRAY_LOOKUP = make_lookup(ASCII_CHARS)
@@ -100,20 +101,27 @@ def export_video(video_path, output_path, target_w, target_h, target_fps,
     else:
         log("解码模式: ffmpeg 软件解码")
     writer = _make_ffmpeg_writer(output_path, target_fps, canvas_w, canvas_h, fmt, log,
-                                 ffmpeg_usage=ffmpeg_usage)
+                                 ffmpeg_usage=ffmpeg_usage, encoder=encoder)
     if writer is None:
         msg = f"错误：无法初始化视频编码器（格式 {fmt}，所有候选编码器均失败）"
         log(msg)
         return _finish_export(False, msg, on_done)
     writer = QueuedWriter(writer)
     log(f"导出开始: 画布 {canvas_w}x{canvas_h} @ {target_fps:.2f}fps, 格式 {fmt}, 编码器 {writer.codec}, 彩色={use_color}")
-    ok, msg = _export_single(
-        video_path, writer, output_path, target_w, target_h, target_fps, use_color,
-        canvas_w, canvas_h, interval, est_total, on_progress, log,
-        metadata=metadata, hwaccel=hwaccel, decode_args=decode_args,
-        atlas=atlas, tile_w=tile_w, tile_h=tile_h,
-        char_to_idx=char_to_idx, ffmpeg_usage=ffmpeg_usage, cancel=cancel)
-    writer.release()
+    # 必须放在 finally：_export_single 抛异常时若跳过 release()，ffmpeg 编码进程会被遗弃并一直占着输出文件
+    ok, msg = False, "错误：导出未完成"
+    try:
+        ok, msg = _export_single(
+            video_path, writer, output_path, target_w, target_h, target_fps, use_color,
+            canvas_w, canvas_h, interval, est_total, on_progress, log,
+            metadata=metadata, hwaccel=hwaccel, decode_args=decode_args,
+            atlas=atlas, tile_w=tile_w, tile_h=tile_h,
+            char_to_idx=char_to_idx, ffmpeg_usage=ffmpeg_usage, cancel=cancel)
+    finally:
+        try:
+            writer.release()
+        except Exception as e:
+            log(f"释放编码器失败: {e}")
     if ok:
         _mux_audio(output_path, video_path, fmt, log)
     elif msg.startswith("已取消"):

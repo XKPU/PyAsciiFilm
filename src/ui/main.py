@@ -1,11 +1,12 @@
 # TUI 主界面
+import threading
+
 from textual.app import App, ComposeResult
 from textual.widgets import (
     ListView, ListItem, Label, Header, Footer,
 )
 
 from utils.helpers import _list_verified_decode_backends, _log
-from core.main import reload_charset
 
 from .dialogs import SelectingScreen
 from .widgets import KeyBar, safe_notify
@@ -36,7 +37,7 @@ class MenuApp(App):
         self.title = "PyAsciiFilm"
         self.query_one(ListView).focus()
         self._update_keybar()
-        self.run_worker(self._detect_decode_backends, thread=True)
+        self._start_backend_detect()
 
     def _update_keybar(self):
         try:
@@ -45,15 +46,22 @@ class MenuApp(App):
         except Exception:
             pass
 
-    def _detect_decode_backends(self):
-        _shared._cached_decode_backends = _list_verified_decode_backends()
+    def _start_backend_detect(self):
+        # 后台探测可用解码后端
+        def _detect():
+            try:
+                _shared._cached_decode_backends = _list_verified_decode_backends()
+            except Exception:
+                _shared._cached_decode_backends = None
+
+        threading.Thread(target=_detect, name="decode-backend-detect",
+                         daemon=True).start()
 
     def compose(self) -> ComposeResult:
         yield Header()
         yield ListView(
             ListItem(Label("播放视频"), id="play"),
             ListItem(Label("导出视频"), id="export"),
-            ListItem(Label("刷新配置"), id="reload_config"),
             ListItem(Label("退出程序"), id="quit"),
         )
         yield Footer()
@@ -68,10 +76,6 @@ class MenuApp(App):
             _log("菜单：导出视频")
             self.push_screen(SelectingScreen(
                 initial=None, on_done=self._after_export_pick))
-        elif event.item.id == "reload_config":
-            chars = reload_charset()
-            _log("菜单：刷新配置")
-            safe_notify(self, f"配置已刷新，字符集已重新加载：{chars}", markup=False)
         elif event.item.id == "quit":
             _log("菜单：退出")
             self.app.exit(result="quit")

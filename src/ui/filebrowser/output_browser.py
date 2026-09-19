@@ -12,21 +12,19 @@ from textual.events import Key
 
 from utils.helpers import (
     _log_error,
-    _write_config_value,
     sorted_entries,
     format_datetime_ts as _format_datetime_ts,
     user_dirs as _user_dirs, list_drives as _list_drives,
     VIDEO_EXTS,
-    LAST_EXPORT_DIR_KEY,
 )
 from ..widgets import KeyBar, safe_notify
 from .browser_nav import BrowserNav
 from .browser_config import ODB_CSS, ODB_ID_TO_ZONE, ODB_ZONE_HINTS
-from ..screens._helpers import _load_last_export_dir
+from ..screens._helpers import _fallback_browser_dir
 
 
 def _safe_id(name: str) -> str:
-    """将任意字符串转为合法的 Textual id"""
+    # 将任意字符串转为合法的 Textual id
     import re as _re, hashlib
     clean = _re.sub(r"[^a-zA-Z0-9]", "-", name).strip("-")
     if not clean:
@@ -37,21 +35,13 @@ def _safe_id(name: str) -> str:
     return f"{clean}-{h}"
 
 
-def _save_last_export_dir(path):
-    try:
-        if path and os.path.isdir(path):
-            _write_config_value(LAST_EXPORT_DIR_KEY, path)
-    except Exception:
-        pass
-
-
 def _sorted_entries(path, video_only=True):
     dirs, files = sorted_entries(path, video_only=video_only, hide_hidden=True)
     return [(k, n) for k, n, _ in dirs], [(k, n) for k, n, _ in files]
 
 
 class OutputDirBrowser(Screen, BrowserNav):
-    """TUI 输出目录浏览器"""
+    # TUI 输出目录浏览器
 
     BINDINGS: list = []
     CSS = ODB_CSS
@@ -60,13 +50,14 @@ class OutputDirBrowser(Screen, BrowserNav):
 
     def __init__(self, initial=None, filename_hint="", ext="mp4"):
         super().__init__()
+        # 输出浏览器不记录、也不读取"上次位置"：永远以输入文件所在位置为准。
+        # 记录会让下一次导出莫名从上一次的输出目录开始，与输入视频无关。
         if initial and os.path.isdir(initial):
             self._current_path = initial
         elif initial and os.path.isfile(initial):
             self._current_path = os.path.dirname(initial)
         else:
-            saved = _load_last_export_dir()
-            self._current_path = saved or os.getcwd()
+            self._current_path = _fallback_browser_dir()
         self._filename_hint = filename_hint
         self._ext = ext
         self._dir_names: list[str] = []
@@ -479,13 +470,11 @@ class OutputDirBrowser(Screen, BrowserNav):
                 self._on_conflict_resolved
             )
         else:
-            _save_last_export_dir(self._current_path)
             self.dismiss((self._current_path, filename))
 
     def _on_conflict_resolved(self, choice):
         if choice == "replace":
             filename = self.query_one("#filename-input", Input).value.strip()
-            _save_last_export_dir(self._current_path)
             self.dismiss((self._current_path, filename))
         elif choice == "rename":
             filename = self.query_one("#filename-input", Input).value.strip()
@@ -497,7 +486,6 @@ class OutputDirBrowser(Screen, BrowserNav):
                     f"{filename}_{cnt}.{self._ext}"
                 )
                 cnt += 1
-            _save_last_export_dir(self._current_path)
             self.dismiss((self._current_path, os.path.splitext(os.path.basename(target_path))[0]))
         else:
             self._cancel()

@@ -11,8 +11,9 @@ from core.main import ASCII_CHARS
 from ..dialogs import SelectingScreen
 from ..widgets import KeyBar, PlainSelect
 from ..filebrowser.main import OutputDirBrowser
-from .._shared import _probe_video, _exporter
-from ._helpers import char_h_for_w, char_w_for_h, canvas_bytes, recommended_char_size
+from .._shared import _exporter
+from ._helpers import (char_h_for_w, char_w_for_h, canvas_bytes,
+                       recommended_char_size, _probe_video_metadata)
 from .file_conflict import FileConflictScreen
 from ._screen_config import EXPORT_ID_TO_ZONE, EXPORT_ZONE_HINTS, EXPORT_CSS, _EXPORT_INLINE
 
@@ -96,7 +97,10 @@ class ExportSettingsScreen(Screen):
 
     def _set_video(self, video_path):
         self.video_path = video_path
-        self.src_w, self.src_h, self.src_fps = _probe_video(video_path)
+        _info = _probe_video_metadata(video_path) or {}
+        self.src_w = _info.get("width") or 0
+        self.src_h = _info.get("height") or 0
+        self.src_fps = _info.get("fps") or 0.0
         self.rec_w, self.rec_h = recommended_char_size(
             self.src_w, self.src_h, self.cell_w, self.cell_h,
             self._MAX_REC_CHAR_W, _exporter()[2], _exporter()[3])

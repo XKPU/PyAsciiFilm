@@ -1,5 +1,4 @@
 # 屏幕共享配置（快捷键提示等）
-"""导出/播放设置页共享的键盘区域提示文本"""
 
 EXPORT_ID_TO_ZONE = {
     "reselect": "src_area",
@@ -83,6 +82,9 @@ EXPORT_CSS = """
     Label { width: auto; }
     Input { width: 1fr; }
     Select { width: 1fr; }
+    /* srcinfo 必须限宽：Static 默认撑满整行，会把右侧"重新选择"
+       按钮挤出屏幕（实测各终端宽度下都被裁掉，鼠标点不到） */
+    #srcinfo { width: 1fr; }
     #out_path { width: 1fr; }
     #browse_dir { width: 10; }
     .hint { color: $text-muted; }
