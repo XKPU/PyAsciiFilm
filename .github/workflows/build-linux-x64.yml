@@ -2,22 +2,32 @@ name: Build Linux x64
 
 on:
   workflow_dispatch:
-
 jobs:
   build-linux-x64:
     runs-on: ubuntu-latest
+    # glibc 不随程序分发（它是动态链接器本身，内核先加载它），所以构建机的
+    # glibc 版本就是产物的兼容底线。ubuntu-latest 已滚到 24.04（glibc 2.39），
+    # 产物要求 GLIBC_2.38，在 22.04(2.35) 等机器上直接拒绝启动。
+    # 固定到 manylinux_2_28，底线降到 glibc 2.28(AlmaLinux 8)，覆盖到 CentOS 8+。
+    container: quay.io/pypa/manylinux_2_28_x86_64
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10.9"
-          cache: pip
-          cache-dependency-path: requirements.txt
-      - run: pip install "nuitka>=2.3.7" ordered-set zstandard -r requirements.txt
+      # 用镜像自带的解释器（/opt/python/cp310-cp310）而不是 setup-python：
+      # Nuitka 会把 libpython 打进产物，解释器自身的 glibc 底线就是产物底线。
+      # 镜像自带的解释器与镜像 glibc 一致，最稳妥。
+      - name: 选择 Python 3.10
+        run: |
+          echo "/opt/python/cp310-cp310/bin" >> "$GITHUB_PATH"
+      - name: 安装依赖
+        run: |
+          # manylinux 镜像不含 zip，打包步骤要用到，这里装一次
+          dnf install -y zip
+          python -m pip install --upgrade pip
+          python -m pip install "nuitka>=2.3.7" ordered-set zstandard -r requirements.txt
       - name: Cache Nuitka
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/nuitka-cache-standalone
+          path: nuitka-cache-standalone
           key: "nuitka-${{ runner.os }}-x64-standalone-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
           restore-keys: |
             "nuitka-${{ runner.os }}-x64-standalone-"
@@ -37,7 +47,7 @@ jobs:
             --lto=yes \
             src/main.py
         env:
-          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-standalone"
+          NUITKA_CACHE_DIR: "nuitka-cache-standalone"
       - run: |
           distFolder=$(find dist -maxdepth 1 -type d -name "*.dist" | head -1)
           if [ -n "$distFolder" ]; then
