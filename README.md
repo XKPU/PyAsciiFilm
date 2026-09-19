@@ -48,13 +48,13 @@
 
 ### 支持目标
 
-| 平台 | 架构 | 输出格式 | Runner |
-|------|------|----------|--------|
-| Windows | ARM64 | `.exe` | `windows-latest` |
-| Windows | x86_64 | `.exe` | `windows-latest` |
-| Linux | x86_64 | 二进制可执行文件 | `ubuntu-latest` |
-| Linux | aarch64 (ARM64) | 二进制可执行文件 | `ubuntu-latest` |
-| macOS | aarch64 (Apple Silicon) | 二进制可执行文件 | `macos-latest` |
+| 平台 | 架构 |
+|------|------|
+| Windows | ARM64 |
+| Windows | x86_64 |
+| Linux | x86_64 |
+| Linux | aarch64 (ARM64) |
+| macOS | aarch64 (Apple Silicon) |
 
 ## 许可证
 
