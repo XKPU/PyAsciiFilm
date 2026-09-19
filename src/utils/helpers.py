@@ -64,6 +64,14 @@ _LOG_LOCK = threading.Lock()
 _LOGGER = None
 
 
+def _log_enabled() -> bool:
+    # 日志开关，读取失败时按关闭处理
+    try:
+        return bool(_read_config().get("EnableFileLog", False))
+    except Exception:
+        return False
+
+
 def _init_logger():
     global _LOGGER
     if _LOGGER is not None:
@@ -72,7 +80,8 @@ def _init_logger():
     logger.setLevel(logging.DEBUG)
     logger.propagate = False
     try:
-        fh = logging.FileHandler(_LOG_PATH, encoding="utf-8", delay=False)
+        # delay=True：延迟到真正写第一条日志时才创建文件，关日志时不留空文件
+        fh = logging.FileHandler(_LOG_PATH, encoding="utf-8", delay=True)
         fh.setLevel(logging.DEBUG)
         fh.setFormatter(logging.Formatter(
             "%(asctime)s [%(levelname)s] %(message)s",
@@ -86,7 +95,9 @@ def _init_logger():
 
 
 def _clear_log():
-    # 启动时清空日志文件
+    # 启动时清空日志文件；关闭日志功能时不创建文件
+    if not _log_enabled():
+        return
     try:
         with open(_LOG_PATH, "w", encoding="utf-8") as f:
             f.write("")
@@ -98,11 +109,7 @@ def _log(msg, level=logging.INFO):
     # 文件日志（受 EnableFileLog 配置控制）
     if not isinstance(msg, str):
         msg = str(msg)
-    try:
-        cfg = _read_config()
-        if not cfg.get("EnableFileLog", False):
-            return
-    except Exception:
+    if not _log_enabled():
         return
     try:
         with _LOG_LOCK:

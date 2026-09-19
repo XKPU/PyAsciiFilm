@@ -47,6 +47,22 @@ class MenuApp(App):
         self._refresh_detect_status()
         self.set_interval(0.25, self._refresh_detect_status)
 
+    def _build_driver(self, *args, **kwargs):
+        # 备用屏幕由 main() 全程持有，屏蔽 Textual 的 1049h/1049l，避免它退出时露出历史命令
+        driver = super()._build_driver(*args, **kwargs)
+        try:
+            orig = driver.write
+
+            def write(data):
+                if data:
+                    data = data.replace("\x1b[?1049h", "").replace("\x1b[?1049l", "")
+                if data:
+                    orig(data)
+            driver.write = write
+        except Exception:
+            pass
+        return driver
+
     def _update_keybar(self):
         try:
             kb = self.query_one(KeyBar)

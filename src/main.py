@@ -49,7 +49,8 @@ def do_play(video_path, use_color, with_audio=True,
             target_fps=None, decode_args=None, ffmpeg_usage=None):
     from core.main import reload_charset
     reload_charset()
-    from playback.main import play_video
+    from playback.main import play_video, set_alt_screen
+    set_alt_screen(True)
     _log(f"开始播放: {video_path} | 彩色={use_color} 音频={with_audio}"
          f" | 目标帧率={target_fps} | 解码={decode_args} | CPU占用={ffmpeg_usage}")
     try:
@@ -81,16 +82,43 @@ def _startup_clear():
         pass
 
 
+def _enter_alt_screen():
+    # 一进程序就进入备用屏幕并全程不再离开，TUI 与播放共用这块屏幕，切换时不会露出历史命令
+    try:
+        sys.stdout.write("\033[?1049h\033[2J\033[H\033[?25l")
+        sys.stdout.flush()
+    except Exception:
+        pass
+
+
+def _leave_alt_screen():
+    # 只有真正退出程序时才离开备用屏幕，先清屏再切回，避免重绘出旧画面
+    try:
+        sys.stdout.write("\033[2J\033[H\033[0m\033[?25h\033[?1049l")
+        sys.stdout.flush()
+    except Exception:
+        pass
+
+
 def main():
     try:
         asyncio.get_running_loop().set_exception_handler(_asyncio_excepthook)
     except RuntimeError:
         pass
 
+    # 全程在备用屏幕里运行：先显示启动提示，再进屏，之后 TUI 与播放都在这块屏幕上切换
     _startup_notice("正在初始化 PyAsciiFilm，请稍候…")
 
     from ui.main import MenuApp
 
+    _enter_alt_screen()
+    try:
+        _run_loop(MenuApp)
+    finally:
+        _leave_alt_screen()
+
+
+def _run_loop(MenuApp):
     while True:
         try:
             result = MenuApp().run()
@@ -132,5 +160,6 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         _log_error(f"致命异常: {e}\n{traceback.format_exc()}")
+        _leave_alt_screen()
         print(f"[致命错误] {e}\n详见日志: {_LOG_FILE}", file=sys.stderr)
         traceback.print_exc()

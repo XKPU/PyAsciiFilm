@@ -154,12 +154,45 @@ def _show_startup_notice(out, text):
         pass
 
 
+_OWNS_SCREEN = False
+# main() 全程持有备用屏幕时置 True，播放就不再自己进出屏幕
+_IN_ALT_SCREEN = False
+
+
+def set_alt_screen(active):
+    # 由 main() 告知当前是否已在备用屏幕中
+    global _IN_ALT_SCREEN
+    _IN_ALT_SCREEN = bool(active)
+
+
+def _leave_screen(out):
+    # 只在本次播放自己进入了备用屏幕时才离开；由 main() 全程持有的屏幕不动它
+    global _OWNS_SCREEN
+    if not _OWNS_SCREEN:
+        return
+    _OWNS_SCREEN = False
+    # 离开前先清屏，避免终端把那 1 帧旧画面重绘出来（看起来就是闪一下）
+    try:
+        out.write("\033[2J\033[H\033[0m\033[?25h\033[?1049l")
+        out.flush()
+    except Exception:
+        pass
+
+
 def play_video(video_path, use_color=False, with_audio=True,
                target_fps=None, decode_args=None, ffmpeg_usage=None):
+    global _OWNS_SCREEN
     _enable_windows_ansi()
+    out = sys.stdout
+    # 已在备用屏幕里（由 main() 全程持有）就不用再进，避免多余的进出导致闪动
+    if not _IN_ALT_SCREEN:
+        out.write("\033[?1049h")
+        _OWNS_SCREEN = True
+    out.write("\033[2J\033[?25l")
+    out.flush()
+    _show_startup_notice(out, "正在缓冲…")
     _log(f"播放初始化: {video_path} | 彩色={use_color} 音频={with_audio}"
          f" | 目标帧率={target_fps} | 解码={decode_args} | CPU占用={ffmpeg_usage}")
-    out = sys.stdout
 
     _playback_logs = []
 
@@ -175,6 +208,7 @@ def play_video(video_path, use_color=False, with_audio=True,
     video_width = int(meta.get("width") or 0)
     video_height = int(meta.get("height") or 0)
     if video_width <= 0 or video_height <= 0:
+        _leave_screen(out)
         print("错误: 无法读取视频尺寸")
         return False
     fps = clean_fps(meta.get("fps")) or 30.0
@@ -199,13 +233,9 @@ def play_video(video_path, use_color=False, with_audio=True,
                           decode_args=decode_args, ffmpeg_usage=ffmpeg_usage)
     except Exception as e:
         _log_error(f"无法打开视频文件（{e}）")
+        _leave_screen(out)
         print(f"错误: 无法打开视频文件（{e}）")
         return False
-
-    # 先切到备用屏幕再启动音频：音频要等 ffmpeg 解码出第一块数据才出声，期间如果什么都不显示就是"黑屏卡住"。这里先把提示画出来
-    out.write("\033[?1049h\033[2J\033[?25l")
-    out.flush()
-    _show_startup_notice(out, "正在缓冲…")
 
     audio = start_audio(video_path, log=_buf_log) if with_audio else None
     stop_audio = audio[0] if audio else None
@@ -304,12 +334,11 @@ def play_video(video_path, use_color=False, with_audio=True,
         keys.close()
         if stop_audio:
             stop_audio()
-        out.write("\033[0m\033[?25h\033[?1049l")
-        out.flush()
-        # 日志已写入日志文件，此处不再往终端打；备用屏幕已退出，写 stderr 会闪出一片日志
+        _leave_screen(out)
+        # 日志写入日志文件；备用屏幕已退出，写 stderr 会让正常终端闪出一片日志
         if _playback_logs:
             try:
-                _log("播放日志:\n" + "\n".join(_playback_logs))
+                _log("播放结束，本次日志:\n" + "\n".join(_playback_logs))
             except Exception:
                 pass
 
