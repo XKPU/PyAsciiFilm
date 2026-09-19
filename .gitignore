@@ -30,9 +30,9 @@ Thumbs.db
 
 # tast
 /_*
-build.bat
 test/
 tests/
 test.bat
+test-one.bat
 setting.json
 pyasciifilm.log
