@@ -1,13 +1,5 @@
-# 构建全部 Linux 目标（x64 / arm64 × standalone / onefile）
 #
-# 关于 glibc：glibc 不可能随程序分发——它是动态链接器本身，内核先加载它，
-# 再轮到我们的可执行文件。所以**构建机的 glibc 版本就是产物的兼容底线**。
-# ubuntu-latest 已滚到 24.04（glibc 2.39），产物会要求 GLIBC_2.38，
-# 在 Ubuntu 22.04(2.35) 等机器上直接拒绝启动。
-# 因此这里统一用 manylinux_2_28 容器，把底线压到 glibc 2.28（AlmaLinux 8）。
 #
-# 另：必须用镜像自带的 /opt/python/cp310-cp310，而不是 actions/setup-python——
-# Nuitka 会把 libpython 打进产物，解释器自身的 glibc 底线也会变成产物底线。
 name: Build Linux (All)
 
 on:
@@ -22,7 +14,6 @@ jobs:
     runs-on: ${{ matrix.runs_on }}
     container: quay.io/pypa/manylinux_2_28_${{ matrix.arch }}
     strategy:
-      # 一个架构失败不要拖累另一个，方便定位问题
       fail-fast: false
       matrix:
         include:
@@ -36,28 +27,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 选择 Python 3.10
-        # manylinux 镜像不把 python 放进 PATH，需显式指向自带的 cp310
-        run: echo "/opt/python/cp310-cp310/bin" >> "$GITHUB_PATH"
+      - name: Prepare build environment
+        run: bash build/containers/setup-linux.sh
 
-      - name: 安装依赖
+      - name: Install dependencies
         run: |
-          # manylinux 镜像不含 zip，而打包步骤要用
-          dnf install -y zip
           python -m pip install --upgrade pip
           python -m pip install "nuitka>=2.3.7" ordered-set zstandard -r requirements.txt
 
-      - name: 打印环境版本
-        # 便于日后核对产物底线：这里输出的 glibc 就是产物需要的最高版本
-        run: |
-          python -V
-          ldd --version | head -1
-
-      # ---- standalone：目录形式，打成 zip 分发 ----
       - name: Cache Nuitka (standalone)
         uses: actions/cache@v4
         with:
-          # 容器任务里 ${{ runner.temp }} 是宿主机路径，不会挂进容器，故用相对路径
           path: nuitka-cache-standalone
           key: "nuitka-${{ matrix.suffix }}-standalone-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
           restore-keys: |
@@ -66,33 +46,8 @@ jobs:
       - name: Build standalone
         env:
           NUITKA_CACHE_DIR: "nuitka-cache-standalone"
-        run: |
-          VERSION=$(cat version.txt | tr -d '[:space:]')
-          python -m nuitka \
-            --standalone \
-            --follow-imports \
-            --assume-yes-for-downloads \
-            --enable-plugin=tk-inter \
-            --include-package=textual \
-            --include-package=rich._unicode_data \
-            --include-package=imageio_ffmpeg \
-            --include-module=miniaudio \
-            --output-filename="PyAsciiFilm-v${VERSION}-${{ matrix.suffix }}" \
-            --output-dir=dist/standalone \
-            --lto=yes \
-            src/main.py
+        run: bash build/linux-${{ matrix.suffix == 'linux_x64' && 'x64' || 'arm64' }}.sh standalone
 
-      - name: Package standalone to zip
-        run: |
-          distFolder=$(find dist/standalone -maxdepth 1 -type d -name "*.dist" | head -1)
-          if [ -n "$distFolder" ]; then
-            zip -9 "dist/standalone/$(basename $distFolder).zip" -r "$distFolder"/*
-          else
-            echo "::error::Build failed: no .dist folder found in dist/standalone/"
-            exit 1
-          fi
-
-      # ---- onefile：单个可执行文件 ----
       - name: Cache Nuitka (onefile)
         uses: actions/cache@v4
         with:
@@ -104,49 +59,17 @@ jobs:
       - name: Build onefile
         env:
           NUITKA_CACHE_DIR: "nuitka-cache-onefile"
-        run: |
-          VERSION=$(cat version.txt | tr -d '[:space:]')
-          python -m nuitka \
-            --onefile \
-            --follow-imports \
-            --assume-yes-for-downloads \
-            --enable-plugin=tk-inter \
-            --include-package=textual \
-            --include-package=rich._unicode_data \
-            --include-package=imageio_ffmpeg \
-            --include-module=miniaudio \
-            --output-filename="PyAsciiFilm-v${VERSION}-${{ matrix.suffix }}" \
-            --output-dir=dist/onefile \
-            --lto=yes \
-            src/main.py
-
-      # ---- 核对产物 glibc 底线（应 <= 2.28；超过说明基线被抬高）----
-      - name: Verify glibc baseline
-        run: |
-          BIN=dist/onefile/PyAsciiFilm-*-${{ matrix.suffix }}
-          # 必须去掉 GLIBC_ 前缀：否则 MAX 形如 "GLIBC_2.34"，与裸版本号
-          # "2.28" 比较时 sort -V 会判为不相等，导致每次都误报失败。
-          MAX=$(objdump -T $BIN 2>/dev/null | grep -o 'GLIBC_2\.[0-9]*' \
-                | sed 's/^GLIBC_//' | sort -V -u | tail -1)
-          echo "产物要求的最高 glibc 符号: ${MAX:-未知}"
-          if [ -z "$MAX" ]; then
-            echo "::warning::未能解析 glibc 符号版本，跳过检查"
-          else
-            # 2.28 是本次构建的目标底线；比它新就说明镜像没生效
-            if [ "$(printf '%s\n2.28\n' "$MAX" | sort -V | tail -1)" != "2.28" ]; then
-              echo "::error::产物要求 $MAX，高于目标基线 2.28，兼容性未达标"
-              exit 1
-            fi
-            echo "OK: 产物兼容 glibc 2.28 及以上"
-          fi
+        run: bash build/linux-${{ matrix.suffix == 'linux_x64' && 'x64' || 'arm64' }}.sh onefile
 
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-${{ matrix.suffix }}
-          path: dist/standalone/*.dist.zip
+          path: dist/standalone/*.tar.gz
+          if-no-files-found: error
           compression-level: 9
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-${{ matrix.suffix }}-onefile
           path: dist/onefile/PyAsciiFilm-*-${{ matrix.suffix }}
+          if-no-files-found: error
           compression-level: 9

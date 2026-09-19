@@ -28,6 +28,9 @@ Thumbs.db
 # Update
 .md
 
+# backup
+.wfbackup/
+
 # tast
 /_*
 test/

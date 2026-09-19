@@ -2,6 +2,13 @@ name: Build Windows x64
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "Build mode"
+        required: true
+        default: standalone
+        type: choice
+        options: [standalone, onefile]
 
 jobs:
   build-windows-x64:
@@ -14,47 +21,26 @@ jobs:
           cache: pip
           cache-dependency-path: requirements.txt
       - run: pip install "nuitka>=2.3.7" ordered-set zstandard -r requirements.txt
+
       - name: Cache Nuitka
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/nuitka-cache-standalone
-          key: "nuitka-${{ runner.os }}-x64-standalone-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          path: ${{ runner.temp }}/nuitka-cache-${{ inputs.mode }}
+          key: "nuitka-windows_x64-${{ inputs.mode }}-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
           restore-keys: |
-            "nuitka-${{ runner.os }}-x64-standalone-"
-      - shell: pwsh
+            "nuitka-windows_x64-${{ inputs.mode }}-"
+
+      - name: Build
+        shell: pwsh
         env:
-          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-standalone"
-        run: |
-          $VERSION = Get-Content version.txt -Raw
-          $VERSION = $VERSION.Trim()
-          python -m nuitka `
-            --standalone `
-            --follow-imports `
-            --assume-yes-for-downloads `
-            --enable-plugin=tk-inter `
-            --include-package=textual `
-            --include-package=rich._unicode_data `
-            --include-package=imageio_ffmpeg `
-            --include-module=miniaudio `
-            --output-filename="PyAsciiFilm-v${VERSION}-windows_x64.exe" `
-            --output-dir=dist `
-            --lto=yes `
-            --windows-company-name=K_PU `
-            --windows-product-name=PyAsciiFilm `
-            --windows-file-version=$VERSION `
-            --windows-product-version=$VERSION `
-            src/main.py
-      - shell: pwsh
-        run: |
-          $distFolder = Get-ChildItem -Path dist -Directory -Filter "*.dist" | Select-Object -First 1
-          if ($distFolder) {
-            7z a -tzip -mx=9 "dist/$($distFolder.Name).zip" "$($distFolder.FullName)\*"
-          } else {
-            Write-Error "Build failed: no .dist folder found in dist/"
-            exit 1
-          }
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-${{ inputs.mode }}"
+        run: pwsh -File build/windows-x64.ps1 -Mode ${{ inputs.mode }}
+
       - uses: actions/upload-artifact@v4
         with:
-          name: pyasciifilm-windows-x64
-          path: dist/*.dist.zip
+          name: pyasciifilm-windows-x64${{ inputs.mode == 'onefile' && '-onefile' || '' }}
+          path: |
+            dist/standalone/*.dist.zip
+            dist/onefile/PyAsciiFilm-*-windows_x64.exe
+          if-no-files-found: error
           compression-level: 9
