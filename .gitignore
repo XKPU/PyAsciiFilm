@@ -29,6 +29,8 @@ Thumbs.db
 .md
 
 # tast
+/_*
+build.bat
 test/
 tests/
 test.bat

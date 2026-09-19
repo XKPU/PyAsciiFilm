@@ -16,7 +16,6 @@
 运行源码需要以下 Python 依赖：
 
 - `numpy`
-- `imageio`
 - `pillow`
 - `imageio-ffmpeg`
 - `textual`
