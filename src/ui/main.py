@@ -3,10 +3,10 @@ import threading
 
 from textual.app import App, ComposeResult
 from textual.widgets import (
-    ListView, ListItem, Label, Header, Footer,
+    ListView, ListItem, Label, Header, Footer, Static,
 )
 
-from utils.helpers import _list_verified_decode_backends, _log
+from utils.helpers import start_detect, _detect_status, _log, wait_detect
 
 from .dialogs import SelectingScreen
 from .widgets import KeyBar, safe_notify
@@ -21,6 +21,12 @@ class MenuApp(App):
     Screen { align: center middle; }
     ListView { width: 40; height: auto; border: round $accent; padding: 1 2; }
     ListItem { padding: 0 1; }
+    #detect-status {
+        width: 40;
+        height: 1;
+        text-align: center;
+        color: $text-muted;
+    }
     KeyBar {
         height: 1;
         background: $primary 10%;
@@ -38,6 +44,8 @@ class MenuApp(App):
         self.query_one(ListView).focus()
         self._update_keybar()
         self._start_backend_detect()
+        self._refresh_detect_status()
+        self.set_interval(0.25, self._refresh_detect_status)
 
     def _update_keybar(self):
         try:
@@ -47,14 +55,17 @@ class MenuApp(App):
             pass
 
     def _start_backend_detect(self):
-        # 后台探测可用解码后端
-        def _detect():
+        # 启动解码/编码两组检测
+        def _publish():
+            res = wait_detect("decode")
             try:
-                _shared._cached_decode_backends = _list_verified_decode_backends()
+                if res:
+                    _shared._cached_decode_backends = res
             except Exception:
-                _shared._cached_decode_backends = None
+                pass
 
-        threading.Thread(target=_detect, name="decode-backend-detect",
+        start_detect()
+        threading.Thread(target=_publish, name="detect-publish",
                          daemon=True).start()
 
     def compose(self) -> ComposeResult:
@@ -64,8 +75,26 @@ class MenuApp(App):
             ListItem(Label("导出视频"), id="export"),
             ListItem(Label("退出程序"), id="quit"),
         )
+        yield Static("", id="detect-status")
         yield Footer()
         yield KeyBar()
+
+    def _refresh_detect_status(self):
+        # 显示"检测中"，检测完成后自动隐藏
+        try:
+            w = self.query_one("#detect-status", Static)
+        except Exception:
+            return
+        parts = []
+        if _detect_status("decode") == "running":
+            parts.append("解码加速器")
+        if _detect_status("encode") == "running":
+            parts.append("编码加速器")
+        if parts:
+            w.update(f"正在检测：{' / '.join(parts)}…")
+            w.display = True
+        else:
+            w.display = False
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         if event.item.id == "play":

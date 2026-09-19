@@ -46,6 +46,31 @@ def _peek_video_metadata(path: str):
     return False
 
 
+def _detect_pending_text():
+    """检测未完成时返回待检测项文案（"解码"/"编码"/"解码/编码"），已完成返回空串。"""
+    from utils.helpers import _detect_status
+    pending = []
+    if _detect_status("decode") == "running":
+        pending.append("解码")
+    if _detect_status("encode") == "running":
+        pending.append("编码")
+    return "/".join(pending)
+
+
+def _warn_detect_pending(screen):
+    """硬件加速仍在检测中就点了"开始"：黄色提示并返回 True（调用方应中止启动）。
+
+    检测跑在后台线程，此时拿到的后端列表可能不全，直接开跑会用到错误的
+    解码/编码模式，所以这里拦下并让用户稍等。
+    """
+    text = _detect_pending_text()
+    if not text:
+        return False
+    from ..widgets import safe_notify
+    safe_notify(screen, f"请等待{text}模式检测完成", severity="warning", timeout=4)
+    return True
+
+
 def _videos_dir():
     # 用户的"视频"目录（三平台；找不到返回空串）
     for name, path in user_dirs():

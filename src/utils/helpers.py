@@ -350,8 +350,93 @@ def _forward_stderr(proc, log):
     threading.Thread(target=_pump, daemon=True).start()
 
 
-# ---- 硬件加速 ----
+# 硬件加速
 _HW_ACCEL = None
+_HW_DECODE_ONLY = None
+
+# 启动检测调度
+_DETECT_LOCK = threading.Lock()
+_DETECT = {
+    "decode": {"state": "idle", "result": None, "event": threading.Event()},
+    "encode": {"state": "idle", "result": None, "event": threading.Event()},
+}
+_DETECT_STARTED = False
+
+
+def _detect_status(kind):
+    # -> "idle" | "running" | "done"；UI 据此显示"检测中"
+    with _DETECT_LOCK:
+        return _DETECT[kind]["state"]
+
+
+def _detect_ready(kind):
+    with _DETECT_LOCK:
+        d = _DETECT[kind]
+        return d["state"] == "done", d["result"]
+
+
+def _detect_result(kind):
+    # 已完成则返回结果，否则返回 None（不阻塞）
+    ok, res = _detect_ready(kind)
+    return res if ok else None
+
+
+def wait_detect(kind, timeout=None):
+    # 等到该组检测完成；返回结果（超时/未启动则返回 None）
+    with _DETECT_LOCK:
+        d = _DETECT[kind]
+        ev = d["event"]
+        if d["state"] == "done":
+            return d["result"]
+        if d["state"] == "idle":
+            return None
+    ev.wait(timeout)
+    with _DETECT_LOCK:
+        d = _DETECT[kind]
+        return d["result"] if d["state"] == "done" else None
+
+
+def _run_detect(kind, fn):
+    try:
+        res = fn()
+    except Exception:
+        res = None
+    with _DETECT_LOCK:
+        d = _DETECT[kind]
+        d["result"] = res
+        d["state"] = "done"
+        d["event"].set()
+
+
+def start_detect():
+    # 启动解码/编码两组检测
+    global _DETECT_STARTED
+    with _DETECT_LOCK:
+        if _DETECT_STARTED:
+            return
+        _DETECT_STARTED = True
+        for k in ("decode", "encode"):
+            _DETECT[k]["state"] = "running"
+
+    def decode_job():
+        # 解码组：探测硬件解码后端并逐个验证（不碰编码器）
+        try:
+            return _list_verified_decode_backends()
+        except Exception:
+            return [("软件解码", None)]
+
+    def encode_job():
+        # 编码组：只验证可用的 H.264 编码器
+        try:
+            hw = _probe_hw_accel()
+            return list(hw.get("encode_h264", []))
+        except Exception:
+            return []
+
+    threading.Thread(target=_run_detect, args=("decode", decode_job),
+                     name="detect-decode", daemon=True).start()
+    threading.Thread(target=_run_detect, args=("encode", encode_job),
+                     name="detect-encode", daemon=True).start()
 
 
 def _validate_encoder(ff, encoder, extra_args, w=160, h=120):
@@ -368,6 +453,38 @@ def _validate_encoder(ff, encoder, extra_args, w=160, h=120):
         return p.returncode == 0
     except Exception:
         return False
+
+
+def _probe_hw_decode():
+    # 只探测可用的硬件解码后端
+    global _HW_DECODE_ONLY
+    if _HW_DECODE_ONLY is not None:
+        return _HW_DECODE_ONLY
+    ff = _ffmpeg_exe()
+    if not ff:
+        _HW_DECODE_ONLY = []
+        return _HW_DECODE_ONLY
+
+    hwaccels = set()
+    try:
+        r = subprocess.run([ff, "-hide_banner", "-hwaccels"],
+                           stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                           text=True, timeout=5,
+                           creationflags=_CREATE_NO_WINDOW)
+        for line in (r.stdout or "").splitlines():
+            line = line.strip()
+            if line and not line.startswith("-") and not line.startswith("Hardware"):
+                hwaccels.add(line)
+    except Exception:
+        pass
+
+    decode = []
+    for name in ("cuda", "d3d12va", "d3d11va", "dxva2", "qsv", "vaapi",
+                 "videotoolbox"):
+        if name in hwaccels:
+            decode.append(("-hwaccel", name))
+    _HW_DECODE_ONLY = decode
+    return _HW_DECODE_ONLY
 
 
 def _probe_hw_accel():
@@ -513,7 +630,9 @@ def _verify_decode_backend(decode_args):
 
 
 def _list_verified_decode_backends():
-    hw = _probe_hw_accel()
+    # 只取"解码"部分。绝不能调 _probe_hw_accel()：那会顺带把 5 个编码器
+    # 全验证一遍（实测 555ms），解码列表却完全用不到。
+    candidates = _probe_hw_decode()
     result = []
     _LABELS = {
         "cuda": "CUDA (NVIDIA)",
@@ -527,7 +646,6 @@ def _list_verified_decode_backends():
     _PRIORITY = {"cuda": 0, "dxva2": 10, "d3d11va": 11, "d3d12va": 12, "qsv": 13,
                  "vaapi": 14, "videotoolbox": 15}
 
-    candidates = hw["decode"]
     ff = _ffmpeg_exe()
     clip = _make_probe_clip(ff) if (ff and candidates) else None
     try:

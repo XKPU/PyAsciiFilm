@@ -6,7 +6,7 @@ import time
 import numpy as np
 from utils.helpers import (
     clean_fps,
-    _forward_stderr, _ffmpeg_exe, _probe_hw_accel,
+    _forward_stderr, _ffmpeg_exe, _probe_hw_decode,
     _CREATE_NO_WINDOW, _log, _decode_threads,
 )
 
@@ -96,9 +96,8 @@ class FrameReader:
             if self._decode_args:
                 self._log(f"导出解码：使用指定后端 {self._decode_args[-1]}")
             else:
-                hw = _probe_hw_accel() if self._hwaccel else {"decode": []}
-                if hw["decode"]:
-                    backends = [d[-1] for d in hw["decode"]]
+                backends = [d[-1] for d in _probe_hw_decode()] if self._hwaccel else []
+                if backends:
                     self._log(f"导出解码：使用随包 ffmpeg + 硬件加速 {', '.join(backends)}")
                 else:
                     self._log("导出解码：使用随包 ffmpeg 软件解码")
@@ -111,8 +110,8 @@ class FrameReader:
         if self._decode_args:
             candidates = [self._decode_args, None]
         elif self._hwaccel:
-            hw = _probe_hw_accel()
-            candidates = list(hw["decode"]) + [None]
+            # 只探解码：播放不编码，没必要为编码器验证白等半秒
+            candidates = list(_probe_hw_decode()) + [None]
         else:
             candidates = [None]
 

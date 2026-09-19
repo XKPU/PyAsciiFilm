@@ -205,7 +205,7 @@ def play_video(video_path, use_color=False, with_audio=True,
     # 先切到备用屏幕再启动音频：音频要等 ffmpeg 解码出第一块数据才出声，期间如果什么都不显示就是"黑屏卡住"。这里先把提示画出来
     out.write("\033[?1049h\033[2J\033[?25l")
     out.flush()
-    _show_startup_notice(out, "正在缓冲音频…")
+    _show_startup_notice(out, "正在缓冲…")
 
     audio = start_audio(video_path, log=_buf_log) if with_audio else None
     stop_audio = audio[0] if audio else None
@@ -221,7 +221,11 @@ def play_video(video_path, use_color=False, with_audio=True,
         while time.monotonic() < deadline:
             astart = get_audio_start()
             if astart is not None:
-                start = astart
+                # 等到音频真正出声，start 取此刻，画面与进度条同时起算
+                gap = astart - time.monotonic()
+                if gap > 0:
+                    time.sleep(gap)
+                start = time.monotonic()
                 break
             # 无音轨/解码已结束：不必再等，立刻开播
             if no_audio is not None and no_audio():

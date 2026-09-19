@@ -13,7 +13,8 @@ from ..widgets import KeyBar, PlainSelect
 from ..filebrowser.main import OutputDirBrowser
 from .._shared import _exporter
 from ._helpers import (char_h_for_w, char_w_for_h, canvas_bytes,
-                       recommended_char_size, _probe_video_metadata)
+                       recommended_char_size, _probe_video_metadata,
+                       _warn_detect_pending)
 from .file_conflict import FileConflictScreen
 from ._screen_config import EXPORT_ID_TO_ZONE, EXPORT_ZONE_HINTS, EXPORT_CSS, _EXPORT_INLINE
 
@@ -274,6 +275,9 @@ class ExportSettingsScreen(Screen):
             self._do_export()
 
     def _do_export(self):
+        # 检测未完成就点"开始导出"：提示并中止，避免选错编码模式
+        if _warn_detect_pending(self):
+            return
         if not self.video_path:
             self.query_one("#err", Static).update("请先选择视频文件")
             return

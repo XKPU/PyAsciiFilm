@@ -9,7 +9,7 @@ from textual.containers import Vertical, Horizontal, ScrollableContainer
 
 from ..dialogs import SelectingScreen
 from ..widgets import KeyBar, PlainSelect
-from ._helpers import _probe_video_metadata
+from ._helpers import _probe_video_metadata, _warn_detect_pending
 from ._screen_config import PLAY_ID_TO_ZONE, PLAY_ZONE_HINTS, _PLAY_INLINE
 
 
@@ -180,6 +180,9 @@ class PlaySettingsScreen(Screen):
             return
 
     def _do_play(self):
+        # 检测未完成就点"开始播放"：提示并中止，避免用不完整的后端列表开跑
+        if _warn_detect_pending(self):
+            return
         if not self.video_path:
             self.query_one("#err", Static).update("请先选择视频文件")
             return
