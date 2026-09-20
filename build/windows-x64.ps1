@@ -1,4 +1,4 @@
-﻿param(
+param(
     [ValidateSet('standalone', 'onefile')]
     [string]$Mode = 'standalone'
 )
@@ -48,18 +48,15 @@ if ($Mode -eq 'standalone') {
     $base = $distFolder.Name
     $zip = Join-Path $OutDir "$BaseName.zip"
     if (Test-Path $zip) { Remove-Item $zip -Force }
-    Push-Location $distFolder.FullName
-    try {
-        7z a -tzip -mx=9 $zip ".\*" | Out-Null
-        if ($LASTEXITCODE -ne 0) { throw "packaging failed (exit $LASTEXITCODE)" }
-    } finally {
-        Pop-Location
-    }
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::CreateFromDirectory($distFolder.FullName, $zip, [System.IO.Compression.CompressionLevel]::Optimal, $false)
+    if (-not (Test-Path $zip)) { throw "packaging failed: archive was not created at $zip" }
+    if ((Get-Item $zip).Length -eq 0) { throw "packaging failed: archive is empty at $zip" }
+
     $archive = [System.IO.Compression.ZipFile]::OpenRead($zip)
     try {
-        $names = $archive.Entries | ForEach-Object { $_.FullName }
+        $names = @($archive.Entries | ForEach-Object { $_.FullName })
     } finally {
         $archive.Dispose()
     }
