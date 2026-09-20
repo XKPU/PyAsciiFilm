@@ -41,7 +41,7 @@ jobs:
         with:
           name: pyasciifilm-windows-arm64${{ inputs.mode == 'onefile' && '-onefile' || '' }}
           path: |
-            dist/standalone/*.dist.zip
+            dist/standalone/PyAsciiFilm-*.zip
             dist/onefile/PyAsciiFilm-*-windows_arm64.exe
           if-no-files-found: error
           compression-level: 9

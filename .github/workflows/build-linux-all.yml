@@ -59,7 +59,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-${{ matrix.suffix }}
-          path: dist/standalone/*.tar.gz
+          path: dist/standalone/PyAsciiFilm-*.tar.gz
           if-no-files-found: error
           compression-level: 9
       - uses: actions/upload-artifact@v4

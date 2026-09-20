@@ -39,32 +39,36 @@ python -m nuitka \
   src/main.py
 
 if [ "$MODE" = "standalone" ]; then
-  distFolder=$(find "$OUT_DIR" -maxdepth 1 -type d -name '*.dist' | head -1)
+  distFolder=$(find "$OUT_DIR" -maxdepth 1 -type d -name '*.dist' -print -quit)
   if [ -z "$distFolder" ]; then
     echo "build failed: no .dist directory in $OUT_DIR" >&2
     exit 1
   fi
   base=$(basename "$distFolder")
-  tar -czf "$OUT_DIR/${base}.tar.gz" -C "$OUT_DIR" "$base"
+  tar -czf "$OUT_DIR/${OUT_NAME}.tar.gz" -C "$distFolder" .
 
-  LISTING=$(tar -tzf "$OUT_DIR/${base}.tar.gz")
+  LISTING=$(tar -tzf "$OUT_DIR/${OUT_NAME}.tar.gz")
   TOP=$(printf '%s\n' "$LISTING" | sed -n '1p')
-  N=$(printf '%s\n' "$LISTING" | wc -l)
+  N=$(printf '%s\n' "$LISTING" | grep -cv '/$' || true)
   case "$TOP" in
-    *.dist/) ;;
-    *) echo "verify failed: archive top level is not a .dist directory: $TOP" >&2; exit 1 ;;
+    "./") ;;
+    *) echo "verify failed: archive top level is not './': $TOP" >&2; exit 1 ;;
   esac
-  if [ "$N" -lt 10 ]; then
-    echo "verify failed: archive has only $N entries" >&2
+  if printf '%s\n' "$LISTING" | grep -q "^${base}/"; then
+    echo "verify failed: archive must not contain a top-level ${base}/ directory" >&2
     exit 1
   fi
-  echo "artifact: $OUT_DIR/${base}.tar.gz ($N entries)"
+  if [ "$N" -lt 10 ]; then
+    echo "verify failed: archive has only $N files" >&2
+    exit 1
+  fi
+  echo "artifact: $OUT_DIR/${OUT_NAME}.tar.gz ($N files, no top-level directory)"
 else
   echo "artifact: $OUT_DIR/$OUT_NAME"
 fi
 
 if [ "$MODE" = "standalone" ]; then
-  distDir=$(find "$OUT_DIR" -maxdepth 1 -type d -name '*.dist' | head -1)
+  distDir=$(find "$OUT_DIR" -maxdepth 1 -type d -name '*.dist' -print -quit)
   BIN="${distDir:-$OUT_DIR}/$OUT_NAME"
 else
   BIN="$OUT_DIR/$OUT_NAME"

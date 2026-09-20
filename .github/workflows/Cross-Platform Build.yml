@@ -40,7 +40,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-windows_x64
-          path: dist/standalone/*.dist.zip
+          path: dist/standalone/PyAsciiFilm-*.zip
           if-no-files-found: error
           compression-level: 9
       - uses: actions/upload-artifact@v4
@@ -87,7 +87,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-windows_arm64
-          path: dist/standalone/*.dist.zip
+          path: dist/standalone/PyAsciiFilm-*.zip
           if-no-files-found: error
           compression-level: 9
       - uses: actions/upload-artifact@v4
@@ -133,7 +133,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-linux_x64
-          path: dist/standalone/*.tar.gz
+          path: dist/standalone/PyAsciiFilm-*.tar.gz
           if-no-files-found: error
           compression-level: 9
       - uses: actions/upload-artifact@v4
@@ -179,7 +179,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-linux_arm64
-          path: dist/standalone/*.tar.gz
+          path: dist/standalone/PyAsciiFilm-*.tar.gz
           if-no-files-found: error
           compression-level: 9
       - uses: actions/upload-artifact@v4
@@ -224,7 +224,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: pyasciifilm-macos_arm64
-          path: dist/standalone/*.dist.zip
+          path: dist/standalone/PyAsciiFilm-*.zip
           if-no-files-found: error
           compression-level: 9
       - uses: actions/upload-artifact@v4

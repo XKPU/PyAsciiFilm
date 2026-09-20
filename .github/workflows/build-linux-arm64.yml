@@ -43,7 +43,7 @@ jobs:
         with:
           name: pyasciifilm-linux-arm64${{ inputs.mode == 'onefile' && '-onefile' || '' }}
           path: |
-            dist/standalone/*.tar.gz
+            dist/standalone/PyAsciiFilm-*.tar.gz
             dist/onefile/PyAsciiFilm-*-linux_arm64
           if-no-files-found: error
           compression-level: 9

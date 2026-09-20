@@ -15,12 +15,31 @@ them up.
 | `windows-x64.ps1` | Windows x86_64 | `pwsh -File build/windows-x64.ps1 -Mode standalone` |
 | `windows-arm64.ps1` | Windows arm64 | `pwsh -File build/windows-arm64.ps1 -Mode standalone` |
 
+## Naming
+
+Both the binary and the archive use `PyAsciiFilm-v<version>-<platform>_<arch>`:
+
+| Platform | Binary | Archive |
+|----------|--------|---------|
+| Linux x86_64 | `PyAsciiFilm-v3.1.1-linux_x64` | `PyAsciiFilm-v3.1.1-linux_x64.tar.gz` |
+| Linux arm64 | `PyAsciiFilm-v3.1.1-linux_arm64` | `PyAsciiFilm-v3.1.1-linux_arm64.tar.gz` |
+| macOS arm64 | `PyAsciiFilm-v3.1.1-macos_arm64` | `PyAsciiFilm-v3.1.1-macos_arm64.zip` |
+| Windows x86_64 | `PyAsciiFilm-v3.1.1-windows_x64.exe` | `PyAsciiFilm-v3.1.1-windows_x64.zip` |
+| Windows arm64 | `PyAsciiFilm-v3.1.1-windows_arm64.exe` | `PyAsciiFilm-v3.1.1-windows_arm64.zip` |
+
+The Windows binary keeps its `.exe` suffix so it stays double-clickable.
+The archive name comes from `$OUT_NAME` (or `$BaseName` on Windows), not from
+the Nuitka `.dist` directory name, which is always `main.dist`.
+
 ## Modes
 
 - `standalone` -> directory output in `dist/standalone/<name>.dist/`
   - Linux: packed as `*.tar.gz` (tar/gzip are BaseOS, no zip install needed)
-  - Windows/macOS: packed as `*.dist.zip`
-- `onefile` -> single file in `dist/onefile/PyAsciiFilm-v<version>-<platform>`
+  - Windows/macOS: packed as `*.zip`
+  - all platforms pack the **contents** of `<name>.dist/`, with no top-level
+    directory inside the archive; extracting drops the program files directly
+    into the current directory
+- `onefile` -> single file in `dist/onefile/PyAsciiFilm-v<version>-<platform>_<arch>`
 
 The two modes write to different directories and never overwrite each other.
 
@@ -56,12 +75,21 @@ docker run --rm -v "$PWD:/w" -w /w pyasciifilm-linux-x64 bash build/linux-x64.sh
 
 ## Artifact verification
 
-The Linux scripts verify the packed artifact and fail the build otherwise:
+All platforms verify the packed artifact and fail the build otherwise:
 
-1. archive top level must be `<name>.dist/` (rejects a onefile masquerading
-   as a directory build)
-2. archive must contain at least 10 entries (rejects a hollow directory)
-3. the highest required glibc symbol version is printed for review
+1. archive must contain no top-level `<name>.dist/` directory
+2. archive must contain at least 10 files (rejects a hollow directory)
+3. on Linux, the highest required glibc symbol version is printed for review
+
+Packing must run with the `.dist` directory as the working directory:
+`tar -C "$distFolder" .` for Linux, a subshell `cd` for macOS `zip`, and
+`Push-Location` for Windows `7z`. Passing a bare `main.dist` name to `zip`
+from the repo root makes zip exit **12** (`Nothing to do!`) even though Nuitka
+already reported success.
+
+`find ... | head -1` is avoided in favour of `find ... -print -quit`: under
+`set -o pipefail`, `head` closing the pipe early makes `find` die of SIGPIPE
+and aborts the script with exit 141.
 
 ## Manual builds
 

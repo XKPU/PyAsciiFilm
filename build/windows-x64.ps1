@@ -8,7 +8,8 @@ Set-Location (Join-Path $PSScriptRoot '..')
 
 $Version = (Get-Content version.txt -Raw).Trim()
 $Suffix = 'windows_x64'
-$OutName = "PyAsciiFilm-v$Version-$Suffix.exe"
+$BaseName = "PyAsciiFilm-v$Version-$Suffix"
+$OutName = "$BaseName.exe"
 
 if ($Mode -eq 'standalone') {
     $OutDir = 'dist/standalone'
@@ -44,10 +45,23 @@ if ($LASTEXITCODE -ne 0) { throw "nuitka failed (exit $LASTEXITCODE)" }
 if ($Mode -eq 'standalone') {
     $distFolder = Get-ChildItem -Path $OutDir -Directory -Filter '*.dist' | Select-Object -First 1
     if (-not $distFolder) { throw "build failed: no .dist directory in $OutDir" }
-    $zip = Join-Path $OutDir "$($distFolder.Name).zip"
-    7z a -tzip -mx=9 $zip "$($distFolder.FullName)\*" | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "packaging failed (exit $LASTEXITCODE)" }
-    Write-Host "artifact: $zip"
+    $base = $distFolder.Name
+    $zip = Join-Path $OutDir "$BaseName.zip"
+    if (Test-Path $zip) { Remove-Item $zip -Force }
+    Push-Location $distFolder.FullName
+    try {
+        7z a -tzip -mx=9 $zip ".\*" | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw "packaging failed (exit $LASTEXITCODE)" }
+    } finally {
+        Pop-Location
+    }
+
+    $listing = 7z l -ba $zip | ForEach-Object { ($_ -split '\s+')[-1] }
+    $nested = $listing | Where-Object { $_ -like "$base/*" }
+    if ($nested) { throw "verify failed: archive must not contain a top-level $base/ directory" }
+    $n = ($listing | Where-Object { $_ -and -not $_.EndsWith('/') }).Count
+    if ($n -lt 10) { throw "verify failed: archive has only $n files" }
+    Write-Host "artifact: $zip ($n files, no top-level directory)"
 } else {
     Write-Host "artifact: $OutDir/$OutName"
 }

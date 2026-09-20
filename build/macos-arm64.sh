@@ -39,14 +39,25 @@ python -m nuitka \
   src/main.py
 
 if [ "$MODE" = "standalone" ]; then
-  distFolder=$(find "$OUT_DIR" -maxdepth 1 -type d -name '*.dist' | head -1)
+  distFolder=$(find "$OUT_DIR" -maxdepth 1 -type d -name '*.dist' -print -quit)
   if [ -z "$distFolder" ]; then
     echo "build failed: no .dist directory in $OUT_DIR" >&2
     exit 1
   fi
   base=$(basename "$distFolder")
-  zip -9 -r "$OUT_DIR/${base}.zip" "$base" >/dev/null
-  echo "artifact: $OUT_DIR/${base}.zip"
+  ( cd "$distFolder" && zip -9 -r -q "../${OUT_NAME}.zip" . )
+
+  LISTING=$(unzip -Z1 "$OUT_DIR/${OUT_NAME}.zip")
+  N=$(printf '%s\n' "$LISTING" | grep -cv '/$' || true)
+  if printf '%s\n' "$LISTING" | grep -q "^${base}/"; then
+    echo "verify failed: archive must not contain a top-level ${base}/ directory" >&2
+    exit 1
+  fi
+  if [ "$N" -lt 10 ]; then
+    echo "verify failed: archive has only $N files" >&2
+    exit 1
+  fi
+  echo "artifact: $OUT_DIR/${OUT_NAME}.zip ($N files, no top-level directory)"
 else
   echo "artifact: $OUT_DIR/$OUT_NAME"
 fi

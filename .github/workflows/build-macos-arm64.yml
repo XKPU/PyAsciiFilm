@@ -39,7 +39,7 @@ jobs:
         with:
           name: pyasciifilm-macos-arm64${{ inputs.mode == 'onefile' && '-onefile' || '' }}
           path: |
-            dist/standalone/*.dist.zip
+            dist/standalone/PyAsciiFilm-*.zip
             dist/onefile/PyAsciiFilm-*-macos_arm64
           if-no-files-found: error
           compression-level: 9
