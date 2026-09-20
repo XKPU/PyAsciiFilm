@@ -12,6 +12,7 @@ from utils.helpers import (
 
 
 _FPS_FLAG = None
+_RE_FLAG = None
 
 
 def _fps_flag():
@@ -35,11 +36,46 @@ def _fps_flag():
     return flag
 
 
+def _re_flag():
+    # -re：让 ffmpeg 按源速率读取，避免解码器抢跑、管道里堆积大量帧。
+    # 老版本 ffmpeg 用的是 -readrate 1，行为等价。
+    global _RE_FLAG
+    if _RE_FLAG is not None:
+        return _RE_FLAG
+    flag = ["-re"]
+    ff = _ffmpeg_exe()
+    if ff:
+        try:
+            r = subprocess.run(
+                [ff, "-readrate", "1", "-h"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                text=True, creationflags=_CREATE_NO_WINDOW,
+            )
+            if "Unrecognized option 'readrate'" not in (r.stderr or ""):
+                flag = ["-readrate", "1"]
+        except Exception:
+            pass
+    _RE_FLAG = flag
+    return flag
+
+
+def _build_vf(scale_w, scale_h, play_fps=0.0):
+    # 组装 -vf 滤镜链。play_fps>0 时在缩放之后按目标帧率抽帧，
+    # 使 ffmpeg 的产出速率与播放端的消费速率一致，避免管道里持续积压帧。
+    parts = []
+    if scale_w > 0 and scale_h > 0:
+        parts.append(f"scale={scale_w}:{scale_h}:flags=neighbor")
+    if play_fps and play_fps > 0:
+        parts.append(f"fps={play_fps:.6f}")
+    return ",".join(parts)
+
+
 class FrameReader:
     # 视频帧读取器：统一使用随包 ffmpeg 管道解码
 
     def __init__(self, video_path, log=None, force_ffmpeg=False, force_size=None,
-                 metadata=None, hwaccel=True, decode_args=None, ffmpeg_usage=None):
+                 metadata=None, hwaccel=True, decode_args=None, ffmpeg_usage=None,
+                 play_fps=None):
         self.path = video_path
         self._log = log or _log
         self._ffmpeg_usage = ffmpeg_usage
@@ -47,6 +83,7 @@ class FrameReader:
         self._force_size = force_size
         self._hwaccel = hwaccel
         self._decode_args = tuple(decode_args) if decode_args else None
+        self._play_fps = float(play_fps) if play_fps and play_fps > 0 else 0.0
         self._proc = None
         self._frame_bytes = 0
         self._pipe_w = self._pipe_h = 0
@@ -123,9 +160,15 @@ class FrameReader:
                 cmd += list(decode_args)
             if seek_seconds > 0:
                 cmd += ["-ss", f"{seek_seconds:.3f}"]
+            # -re 是输入选项，必须放在 -i 之前：让 ffmpeg 按源视频原始速率读取，
+            # 防止它一次性解码到底、把成百上千帧堆进管道造成延迟持续累积。
+            # 仅真机播放需要限速；导出走别的路径，不受影响。
+            if self._play_fps > 0 and not self._force:
+                cmd += _re_flag()
             cmd += ["-i", self.path] + _fps_flag()
-            if self._scale_w > 0 and self._scale_h > 0:
-                cmd += ["-vf", f"scale={self._scale_w}:{self._scale_h}:flags=neighbor"]
+            vf = _build_vf(self._scale_w, self._scale_h, self._play_fps)
+            if vf:
+                cmd += ["-vf", vf]
             cmd += ["-f", "rawvideo", "-pix_fmt", "rgb24", "-"]
             kwargs = {"stdout": subprocess.PIPE, "stderr": subprocess.PIPE,
                       "creationflags": _CREATE_NO_WINDOW}

@@ -212,9 +212,12 @@ def play_video(video_path, use_color=False, with_audio=True,
         print("错误: 无法读取视频尺寸")
         return False
     fps = clean_fps(meta.get("fps")) or 30.0
+    src_fps = fps
     if target_fps and target_fps > 0:
         fps = min(fps, target_fps)
     frame_interval = 1.0 / max(fps, 1.0)
+    # 只有真正降帧时才让解码端按目标帧率抽帧；play_fps 为 0 表示不干预
+    play_fps = fps if fps < src_fps - 1e-6 else 0.0
     total_frames = int(meta.get("frame_count") or 0)
     total_duration = meta.get("duration") or 0.0
     if total_duration <= 0:
@@ -230,7 +233,8 @@ def play_video(video_path, use_color=False, with_audio=True,
     try:
         cap = FrameReader(video_path, log=_buf_log, force_size=(decode_w, decode_h),
                           metadata=(video_width, video_height, fps, total_frames),
-                          decode_args=decode_args, ffmpeg_usage=ffmpeg_usage)
+                          decode_args=decode_args, ffmpeg_usage=ffmpeg_usage,
+                          play_fps=play_fps)
     except Exception as e:
         _log_error(f"无法打开视频文件（{e}）")
         _leave_screen(out)
@@ -289,9 +293,13 @@ def play_video(video_path, use_color=False, with_audio=True,
 
             color_mode_text = "全彩" if use_color else "灰度"
             estimate_h = int(ascii_width * (video_height / video_width) * 0.5)
+            if play_fps and total_duration > 0:
+                shown_total = max(1, int(round(total_duration * play_fps)))
+            else:
+                shown_total = total_frames
             progress_info = (
                 f"平均帧率: {idx / max(time.monotonic() - start, 1e-6):.1f} FPS"
-                f" | 原视频帧: {idx}/{total_frames} | {color_mode_text}"
+                f" | 帧: {idx}/{shown_total} | {color_mode_text}"
                 f" | 分辨率: {ascii_width}x{estimate_h}"
             )
             elapsed = time.monotonic() - start
