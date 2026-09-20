@@ -56,10 +56,16 @@ if ($Mode -eq 'standalone') {
         Pop-Location
     }
 
-    $listing = 7z l -ba $zip | ForEach-Object { ($_ -split '\s+')[-1] }
-    $nested = $listing | Where-Object { $_ -like "$base/*" }
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($zip)
+    try {
+        $names = $archive.Entries | ForEach-Object { $_.FullName }
+    } finally {
+        $archive.Dispose()
+    }
+    $nested = $names | Where-Object { $_ -like "$base/*" }
     if ($nested) { throw "verify failed: archive must not contain a top-level $base/ directory" }
-    $n = ($listing | Where-Object { $_ -and -not $_.EndsWith('/') }).Count
+    $n = ($names | Where-Object { $_ -and -not $_.EndsWith('/') }).Count
     if ($n -lt 10) { throw "verify failed: archive has only $n files" }
     Write-Host "artifact: $zip ($n files, no top-level directory)"
 } else {
