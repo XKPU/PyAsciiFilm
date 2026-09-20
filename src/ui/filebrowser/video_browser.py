@@ -152,7 +152,7 @@ class VideoFileBrowser(Screen, BrowserNav):
     async def _select_current_file_item(self) -> None:
         # 选中文件列表中的当前项
         file_list = self.query_one("#file-list", ListView)
-        if file_list.index is None or file_list.index >= len(file_list):
+        if file_list.index is None or not 0 <= file_list.index < len(file_list):
             return
         item = file_list.children[file_list.index]
         item_class = getattr(item, "classes", "")
@@ -166,7 +166,7 @@ class VideoFileBrowser(Screen, BrowserNav):
     async def _select_current_sidebar_item(self):
         # 选中侧栏中的当前项
         sidebar = self.query_one("#sidebar-list", ListView)
-        if sidebar.index is None:
+        if sidebar.index is None or not 0 <= sidebar.index < len(sidebar):
             return
         item = sidebar.children[sidebar.index]
         nav_path = getattr(item, "_nav_path", None)
@@ -518,7 +518,7 @@ class VideoFileBrowser(Screen, BrowserNav):
 
     async def _confirm(self):
         file_list = self.query_one("#file-list", ListView)
-        if file_list.index is None or file_list.index >= len(file_list):
+        if file_list.index is None or not 0 <= file_list.index < len(file_list):
             self._cancel()
             return
         item = file_list.children[file_list.index]

@@ -13,9 +13,18 @@ _LEVEL_SHIFT = 8 - _COLOR_QBITS
 _LEVEL_HALF = 1 << (_COLOR_QBITS - 1)
 
 
+_FALLBACK_CHARSET = " .:-=+*#%@"
+
+
 def make_lookup(chars):
-    return np.array([chars[i * len(chars) // 256] for i in range(256)],
-                    dtype=object)
+    # 空字符集回退默认，避免导入时索引越界
+    if not isinstance(chars, str) or not chars:
+        chars = _FALLBACK_CHARSET
+    n = len(chars)
+    # 保持原有向下取整映射，暗部对应关系不变；仅令最亮档取到末位字符
+    idx = [i * n // 256 for i in range(256)]
+    idx[255] = n - 1
+    return np.array([chars[v] for v in idx], dtype=object)
 
 
 ASCII_CHARS = load_charset()

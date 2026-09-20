@@ -37,8 +37,7 @@ def _fps_flag():
 
 
 def _re_flag():
-    # -re：让 ffmpeg 按源速率读取，避免解码器抢跑、管道里堆积大量帧。
-    # 老版本 ffmpeg 用的是 -readrate 1，行为等价。
+    # -re：让 ffmpeg 按源速率读取，避免解码器抢跑堆积帧；老版本用 -readrate 1
     global _RE_FLAG
     if _RE_FLAG is not None:
         return _RE_FLAG
@@ -60,8 +59,7 @@ def _re_flag():
 
 
 def _build_vf(scale_w, scale_h, play_fps=0.0):
-    # 组装 -vf 滤镜链。play_fps>0 时在缩放之后按目标帧率抽帧，
-    # 使 ffmpeg 的产出速率与播放端的消费速率一致，避免管道里持续积压帧。
+    # 组装 -vf 滤镜链；play_fps>0 时按目标帧率抽帧，使产出与消费速率一致
     parts = []
     if scale_w > 0 and scale_h > 0:
         parts.append(f"scale={scale_w}:{scale_h}:flags=neighbor")
@@ -160,9 +158,7 @@ class FrameReader:
                 cmd += list(decode_args)
             if seek_seconds > 0:
                 cmd += ["-ss", f"{seek_seconds:.3f}"]
-            # -re 是输入选项，必须放在 -i 之前：让 ffmpeg 按源视频原始速率读取，
-            # 防止它一次性解码到底、把成百上千帧堆进管道造成延迟持续累积。
-            # 仅真机播放需要限速；导出走别的路径，不受影响。
+            # -re 是输入选项须放在 -i 前；仅播放限速，导出不受影响
             if self._play_fps > 0 and not self._force:
                 cmd += _re_flag()
             cmd += ["-i", self.path] + _fps_flag()
@@ -287,6 +283,18 @@ class FrameReader:
                 pass
             try:
                 self._proc.wait(timeout=2)
+            except Exception:
+                # terminate 未生效时强杀，避免残留解码进程
+                try:
+                    self._proc.kill()
+                except Exception:
+                    pass
+                try:
+                    self._proc.wait(timeout=2)
+                except Exception:
+                    pass
+            try:
+                self._proc.stderr.close()
             except Exception:
                 pass
             self._proc = None

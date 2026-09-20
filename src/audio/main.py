@@ -128,7 +128,12 @@ def start_audio(video_path, log=None):
                 if stop_event.is_set():
                     return
                 nbytes = framecount * nbytes_per_frame
-                raw = proc.stdout.read(nbytes)
+                try:
+                    raw = proc.stdout.read(nbytes)
+                except (ValueError, OSError):
+                    # stop() 关闭 stdout 时回调可能正阻塞在 read，按正常结束处理
+                    ended.set()
+                    return
                 if not raw:
                     ended.set()
                     return

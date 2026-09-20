@@ -62,8 +62,9 @@ class _FFmpegWriter:
             self._proc.stdin.close()
         except Exception:
             pass
+        rc = None
         try:
-            self._proc.wait(timeout=30)
+            rc = self._proc.wait(timeout=30)
         except Exception:
             try:
                 self._proc.kill()
@@ -73,6 +74,9 @@ class _FFmpegWriter:
             self._proc.stderr.close()
         except Exception:
             pass
+        # 非零退出说明编码中断，逐帧写入成功也属于失败
+        if rc is not None and rc != 0:
+            raise RuntimeError(f"编码器 {self.codec} 异常退出（返回码 {rc}）")
 
 
 class QueuedWriter:
@@ -97,8 +101,10 @@ class QueuedWriter:
         finally:
             try:
                 self._writer.release()
-            except Exception:
-                pass
+            except Exception as e:
+                # 保留首个错误；收尾失败也要上报
+                if self._error is None:
+                    self._error = e
 
     def write(self, frame):
         # 不能用阻塞 put：编码线程一旦因编码器死亡而退出，队列会一直是满的，put 永久阻塞 -> 取消再也检查不到，导出卡死无法恢复
@@ -220,6 +226,22 @@ def _make_ffmpeg_writer(output_path, fps, w, h, fmt, log, ffmpeg_usage=None,
         _forward_stderr(proc, log)
         if proc.poll() is not None:
             log(f"错误：编码器 {codec} 初始化失败（格式 {fmt}）")
+            # 回收失败的候选进程，避免残留句柄占住输出文件
+            try:
+                proc.stdin.close()
+            except Exception:
+                pass
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+            try:
+                proc.stderr.close()
+            except Exception:
+                pass
             continue
         return _FFmpegWriter(proc, codec)
     return None

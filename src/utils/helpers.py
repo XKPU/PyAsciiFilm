@@ -8,6 +8,7 @@ import string
 import subprocess
 import sys
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -61,6 +62,7 @@ def _app_dir():
 # ---- 文件日志 ----
 _LOG_PATH = os.path.join(_app_dir(), "pyasciifilm.log")
 _LOG_LOCK = threading.Lock()
+_CONFIG_LOCK = threading.Lock()
 _LOGGER = None
 
 
@@ -130,12 +132,19 @@ def _default_log(msg):
 
 
 def clean_fps(fps):
-    if fps is None or fps <= 0:
+    # 仅在极接近整数时取整；29.97/23.976 保留原值，避免长时间漂移
+    if fps is None:
         return 30.0
-    r = round(fps)
-    if abs(fps - r) < 0.5:
-        return float(r)
-    return float(fps)
+    try:
+        v = float(fps)
+    except (TypeError, ValueError):
+        return 30.0
+    if v != v or v <= 0 or v == float("inf"):
+        return 30.0
+    r = round(v)
+    if abs(v - r) < 1e-3:
+        return float(r) if r > 0 else 30.0
+    return v
 
 
 # ---- ffmpeg ----
@@ -183,8 +192,8 @@ def _init_ffmpeg():
 # ---- 视频元数据（随包 ffmpeg） ----
 
 
-def _count_frames(path, limit=None):
-    # 遍历解码统计帧数（容器不记录时长时使用，代价较高）
+def _count_frames(path, limit=None, timeout=20.0):
+    # 遍历解码统计帧数（容器不记录时长时使用，代价较高）；超时返回已计数
     ff = _ffmpeg_exe()
     if not ff:
         return 0
@@ -203,7 +212,10 @@ def _count_frames(path, limit=None):
             return 0
         fbytes = w * h
         n = 0
+        deadline = time.monotonic() + timeout if timeout else None
         while True:
+            if deadline is not None and time.monotonic() > deadline:
+                break
             raw = proc.stdout.read(fbytes)
             if len(raw) < fbytes:
                 break
@@ -637,8 +649,7 @@ def _verify_decode_backend(decode_args):
 
 
 def _list_verified_decode_backends():
-    # 只取"解码"部分。绝不能调 _probe_hw_accel()：那会顺带把 5 个编码器
-    # 全验证一遍（实测 555ms），解码列表却完全用不到。
+    # 只取解码部分；不可调 _probe_hw_accel()，否则会白验证全部编码器
     candidates = _probe_hw_decode()
     result = []
     _LABELS = {
@@ -780,13 +791,8 @@ def list_drives():
 
 
 def sorted_entries(path, video_only=False, hide_hidden=False):
-    # 列出目录内容，目录在前、文件在后，各自按字母序。返回 (dirs, files)，每项为 (sort_key, name, is_dir)
-    try:
-        entries = list(os.scandir(path))
-    except PermissionError:
-        return [], []
-    except OSError:
-        return [], []
+    # 列出目录内容，目录在前文件在后各自按字母序；不可读时向上抛
+    entries = list(os.scandir(path))
 
     dirs, files = [], []
     for entry in entries:
@@ -880,10 +886,20 @@ def _read_config():
 
 
 def _write_config_value(key, value):
-    cfg = _read_config()
-    cfg[key] = value
-    try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
+    # 加锁串行化，避免并发读改写丢更新
+    with _CONFIG_LOCK:
+        cfg = _read_config()
+        cfg[key] = value
+        tmp = CONFIG_FILE + ".tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            # 原子替换，避免写入中断截断配置
+            os.replace(tmp, CONFIG_FILE)
+        except Exception:
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass

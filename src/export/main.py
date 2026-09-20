@@ -61,7 +61,7 @@ def export_video(video_path, output_path, target_w, target_h, target_fps,
         if on_done:
             on_done(False, msg)
         return False, msg
-    src_fps = clean_fps(cap.fps)
+    src_fps = clean_fps(cap.fps) or 30.0
     src_w = int(cap.width)
     src_h = int(cap.height)
     src_count = int(cap.frame_count)
@@ -118,9 +118,12 @@ def export_video(video_path, output_path, target_w, target_h, target_fps,
             atlas=atlas, tile_w=tile_w, tile_h=tile_h,
             char_to_idx=char_to_idx, ffmpeg_usage=ffmpeg_usage, cancel=cancel)
     finally:
+        # release 失败说明编码未收尾，不能当作成功
         try:
             writer.release()
         except Exception as e:
+            ok = False
+            msg = f"错误：编码器未能正常结束: {e}"
             log(f"释放编码器失败: {e}")
     if ok:
         _mux_audio(output_path, video_path, fmt, log)
@@ -171,8 +174,21 @@ def _mux_audio(output_video_path, source_video_path, fmt, log):
     if not ff:
         return
 
-    fd, tmp = tempfile.mkstemp(suffix=os.path.splitext(output_video_path)[1])
-    os.close(fd)
+    # 临时文件放在输出同目录，避免跨盘 os.replace 抛 EXDEV
+    out_dir = os.path.dirname(os.path.abspath(output_video_path))
+    suffix = os.path.splitext(output_video_path)[1]
+    try:
+        fd, tmp = tempfile.mkstemp(suffix=suffix, dir=out_dir)
+        os.close(fd)
+    except OSError as e:
+        log(f"警告：无法创建临时文件（保留无声视频）: {e}")
+        return
+
+    def _cleanup():
+        try:
+            os.remove(tmp)
+        except Exception:
+            pass
 
     common = [
         ff, "-y", "-nostdin", "-loglevel", "warning",
@@ -186,31 +202,40 @@ def _mux_audio(output_video_path, source_video_path, fmt, log):
         r = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                            text=True, creationflags=_CREATE_NO_WINDOW)
     except Exception as e:
-        r = None
+        # 未能执行混流：清理临时文件并按无声视频处理，避免用残次品覆盖成品
         log(f"警告：复制音频异常（保留无声视频）: {e}")
-    if r is not None and r.returncode != 0:
+        _cleanup()
+        return
+    if r.returncode != 0:
         acodec = {"mp4": "aac", "mov": "aac", "mkv": "aac",
                   "avi": "aac", "webm": "libvorbis"}.get(fmt)
         if acodec:
             log("音频 copy 失败，尝试重新编码音频轨…")
-            cmd2 = common + ["-c:a", acodec, tmp]
             try:
-                r2 = subprocess.run(cmd2, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                r2 = subprocess.run(common + ["-c:a", acodec, tmp],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
                                     text=True, creationflags=_CREATE_NO_WINDOW)
             except Exception as e:
                 r2 = None
                 log(f"警告：重编码音频异常（保留无声视频）: {e}")
             if r2 is not None and r2.returncode == 0:
-                os.replace(tmp, output_video_path)
+                try:
+                    os.replace(tmp, output_video_path)
+                except OSError as e:
+                    log(f"警告：替换输出文件失败（保留无声视频）: {e}")
+                    _cleanup()
+                    return
                 log("已复制（重编码）原视频音频轨到导出文件")
                 return
         log(f"警告：复制音频失败（保留无声视频）: {(r.stderr or '')[:300]}")
-        try:
-            os.remove(tmp)
-        except Exception:
-            pass
+        _cleanup()
         return
-    os.replace(tmp, output_video_path)
+    try:
+        os.replace(tmp, output_video_path)
+    except OSError as e:
+        log(f"警告：替换输出文件失败（保留无声视频）: {e}")
+        _cleanup()
+        return
     log("已复制原视频音频轨到导出文件")
 
 
@@ -253,6 +278,8 @@ def _export_single(video_path, writer, output_path, target_w, target_h, target_f
             try:
                 writer.write(cur)
             except Exception as e:
+                # 计入当前帧，避免诊断少报一帧
+                out_count += 1
                 log(f"错误：写入帧失败（编码中断）: {e}")
                 write_err = True
                 break

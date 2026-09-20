@@ -1,4 +1,5 @@
 # 字符画帧生成与终端播放
+import atexit
 import os
 import sys
 import time
@@ -76,9 +77,19 @@ class _KeyReader:
             fd = sys.stdin.fileno()
             old = termios.tcgetattr(fd)
             tty.setcbreak(fd)
+            # 进程被强杀时也要恢复终端
+            atexit.register(self._restore_now, fd, old)
             return fd, old
         except Exception:
             return None
+
+    @staticmethod
+    def _restore_now(fd, old):
+        try:
+            import termios
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        except Exception:
+            pass
 
     def quit_pressed(self):
         if self._msvcrt is not None:
@@ -117,8 +128,9 @@ def _get_terminal_size():
 
 
 def _calculate_optimal_width(term_width, term_height, video_width, video_height):
-    max_ascii_width = min(term_width - 1, video_width)
-    max_ascii_height = min(term_height - 1, video_height)
+    # 终端过窄时 max_ascii_width 会 <=0，直接夹到 1 避免除零和超屏宽度
+    max_ascii_width = max(1, min(term_width - 1, video_width))
+    max_ascii_height = max(1, min(term_height - 1, video_height))
 
     terminal_aspect = max_ascii_height / (max_ascii_width * 0.5)
     video_aspect = video_height / video_width
@@ -250,9 +262,13 @@ def play_video(video_path, use_color=False, with_audio=True,
     last_width = ascii_width
 
     start = time.monotonic()
+    aborted = False
     if get_audio_start is not None:
         deadline = time.monotonic() + 3.0
         while time.monotonic() < deadline:
+            if keys.quit_pressed():
+                aborted = True
+                break
             astart = get_audio_start()
             if astart is not None:
                 # 等到音频真正出声，start 取此刻，画面与进度条同时起算
@@ -267,8 +283,12 @@ def play_video(video_path, use_color=False, with_audio=True,
             time.sleep(0.005)
 
     idx = 0
+    last_pad_key = None
+    last_pad = ""
     try:
         while True:
+            if aborted:
+                break
             if idx % 10 == 0:
                 term_width, term_height = _get_terminal_size()
                 w = _calculate_optimal_width(term_width, term_height,
@@ -317,8 +337,12 @@ def play_video(video_path, use_color=False, with_audio=True,
             frame_lines = ascii_frame.count("\n") + 1
             used = frame_lines + 2
             fill = max(0, term_height - used)
-            padding = ("\n" + " " * term_width) * fill if fill > 0 else ""
-            out.write("\033[r\033[H" + output + "\033[K" + padding + "\033[0m")
+            # 同样的填充串缓存复用，避免每帧重建
+            pad_key = (term_width, fill)
+            if pad_key != last_pad_key:
+                last_pad_key = pad_key
+                last_pad = ("\n" + " " * term_width) * fill if fill > 0 else ""
+            out.write("\033[r\033[H" + output + "\033[K" + last_pad + "\033[0m")
             out.flush()
 
             if keys.quit_pressed():

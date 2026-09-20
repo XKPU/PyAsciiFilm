@@ -163,7 +163,7 @@ class OutputDirBrowser(Screen, BrowserNav):
 
     async def _select_current_file_item(self) -> None:
         file_list = self.query_one("#file-list", ListView)
-        if file_list.index is not None and file_list.index < len(file_list):
+        if file_list.index is not None and 0 <= file_list.index < len(file_list):
             item = file_list.children[file_list.index]
             item_class = getattr(item, "classes", "")
             if "dir-item" in item_class:
@@ -175,7 +175,7 @@ class OutputDirBrowser(Screen, BrowserNav):
 
     async def _select_current_sidebar_item(self):
         sidebar = self.query_one("#sidebar-list", ListView)
-        if sidebar.index is not None:
+        if sidebar.index is not None and 0 <= sidebar.index < len(sidebar):
             item = sidebar.children[sidebar.index]
             nav_path = getattr(item, "_nav_path", None)
             if nav_path is None:
@@ -201,7 +201,7 @@ class OutputDirBrowser(Screen, BrowserNav):
 
     def _fill_filename_from_selected(self):
         file_list = self.query_one("#file-list", ListView)
-        if file_list.index is not None and file_list.index < len(file_list):
+        if file_list.index is not None and 0 <= file_list.index < len(file_list):
             item = file_list.children[file_list.index]
             item_class = getattr(item, "classes", "")
             if "file-item" in item_class:
