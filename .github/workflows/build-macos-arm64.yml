@@ -2,13 +2,6 @@ name: Build macOS ARM64
 
 on:
   workflow_dispatch:
-    inputs:
-      mode:
-        description: "Build mode"
-        required: true
-        default: standalone
-        type: choice
-        options: [standalone, onefile]
 
 jobs:
   build-macos-arm64:
@@ -22,24 +15,44 @@ jobs:
           cache-dependency-path: requirements.txt
       - run: pip install "nuitka>=2.3.7" ordered-set zstandard -r requirements.txt
 
-      - name: Cache Nuitka
+      - name: Cache Nuitka (standalone)
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/nuitka-cache-${{ inputs.mode }}
-          key: "nuitka-macos_arm64-${{ inputs.mode }}-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          path: ${{ runner.temp }}/nuitka-cache-standalone
+          key: "nuitka-macos_arm64-standalone-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
           restore-keys: |
-            "nuitka-macos_arm64-${{ inputs.mode }}-"
+            "nuitka-macos_arm64-standalone-"
 
-      - name: Build
+      - name: Build standalone
         env:
-          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-${{ inputs.mode }}"
-        run: bash build/macos-arm64.sh ${{ inputs.mode }}
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-standalone"
+        run: bash build/macos-arm64.sh standalone
 
-      - uses: actions/upload-artifact@v4
+      - name: Cache Nuitka (onefile)
+        uses: actions/cache@v4
         with:
-          name: pyasciifilm-macos-arm64${{ inputs.mode == 'onefile' && '-onefile' || '' }}
-          path: |
-            dist/standalone/PyAsciiFilm-*.zip
-            dist/onefile/PyAsciiFilm-*-macos_arm64
+          path: ${{ runner.temp }}/nuitka-cache-onefile
+          key: "nuitka-macos_arm64-onefile-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          restore-keys: |
+            "nuitka-macos_arm64-onefile-"
+
+      - name: Build onefile
+        env:
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-onefile"
+        run: bash build/macos-arm64.sh onefile
+
+      - name: Upload standalone package
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-macos-arm64
+          path: dist/standalone/PyAsciiFilm-*.zip
+          if-no-files-found: error
+          compression-level: 9
+
+      - name: Upload onefile binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-macos-arm64-onefile
+          path: dist/onefile/PyAsciiFilm-*-macos_arm64
           if-no-files-found: error
           compression-level: 9

@@ -2,13 +2,6 @@ name: Build Windows ARM64
 
 on:
   workflow_dispatch:
-    inputs:
-      mode:
-        description: "Build mode"
-        required: true
-        default: standalone
-        type: choice
-        options: [standalone, onefile]
 
 jobs:
   build-windows-arm64:
@@ -23,25 +16,46 @@ jobs:
       - run: pip install "nuitka>=2.3.7" ordered-set zstandard
       - run: pip install -r requirements.txt
 
-      - name: Cache Nuitka
+      - name: Cache Nuitka (standalone)
         uses: actions/cache@v4
         with:
-          path: ${{ runner.temp }}/nuitka-cache-${{ inputs.mode }}
-          key: "nuitka-windows_arm64-${{ inputs.mode }}-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          path: ${{ runner.temp }}/nuitka-cache-standalone
+          key: "nuitka-windows_arm64-standalone-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
           restore-keys: |
-            "nuitka-windows_arm64-${{ inputs.mode }}-"
+            "nuitka-windows_arm64-standalone-"
 
-      - name: Build
+      - name: Build standalone
         shell: pwsh
         env:
-          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-${{ inputs.mode }}"
-        run: pwsh -File build/windows-arm64.ps1 -Mode ${{ inputs.mode }}
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-standalone"
+        run: pwsh -File build/windows-arm64.ps1 -Mode standalone
 
-      - uses: actions/upload-artifact@v4
+      - name: Cache Nuitka (onefile)
+        uses: actions/cache@v4
         with:
-          name: pyasciifilm-windows-arm64${{ inputs.mode == 'onefile' && '-onefile' || '' }}
-          path: |
-            dist/standalone/PyAsciiFilm-*.zip
-            dist/onefile/PyAsciiFilm-*-windows_arm64.exe
+          path: ${{ runner.temp }}/nuitka-cache-onefile
+          key: "nuitka-windows_arm64-onefile-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          restore-keys: |
+            "nuitka-windows_arm64-onefile-"
+
+      - name: Build onefile
+        shell: pwsh
+        env:
+          NUITKA_CACHE_DIR: "${{ runner.temp }}/nuitka-cache-onefile"
+        run: pwsh -File build/windows-arm64.ps1 -Mode onefile
+
+      - name: Upload standalone package
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-windows-arm64
+          path: dist/standalone/PyAsciiFilm-*.zip
+          if-no-files-found: error
+          compression-level: 9
+
+      - name: Upload onefile binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-windows-arm64-onefile
+          path: dist/onefile/PyAsciiFilm-*-windows_arm64.exe
           if-no-files-found: error
           compression-level: 9

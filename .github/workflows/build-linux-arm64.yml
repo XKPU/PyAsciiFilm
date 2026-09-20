@@ -2,13 +2,6 @@ name: Build Linux arm64
 
 on:
   workflow_dispatch:
-    inputs:
-      mode:
-        description: "Build mode"
-        required: true
-        default: standalone
-        type: choice
-        options: [standalone, onefile]
 
 jobs:
   build-linux-arm64:
@@ -21,29 +14,49 @@ jobs:
       - name: Prepare build environment
         run: bash build/containers/setup-linux.sh
 
-      - name: Cache Nuitka
-        uses: actions/cache@v4
-        with:
-          path: nuitka-cache-${{ inputs.mode }}
-          key: "nuitka-linux_arm64-${{ inputs.mode }}-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
-          restore-keys: |
-            "nuitka-linux_arm64-${{ inputs.mode }}-"
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install "nuitka>=2.3.7" ordered-set zstandard -r requirements.txt
 
-      - name: Build
-        env:
-          NUITKA_CACHE_DIR: "nuitka-cache-${{ inputs.mode }}"
-        run: bash build/linux-arm64.sh ${{ inputs.mode }}
-
-      - uses: actions/upload-artifact@v4
+      - name: Cache Nuitka (standalone)
+        uses: actions/cache@v4
         with:
-          name: pyasciifilm-linux-arm64${{ inputs.mode == 'onefile' && '-onefile' || '' }}
-          path: |
-            dist/standalone/PyAsciiFilm-*.tar.gz
-            dist/onefile/PyAsciiFilm-*-linux_arm64
+          path: nuitka-cache-standalone
+          key: "nuitka-linux_arm64-standalone-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          restore-keys: |
+            "nuitka-linux_arm64-standalone-"
+
+      - name: Build standalone
+        env:
+          NUITKA_CACHE_DIR: "nuitka-cache-standalone"
+        run: bash build/linux-arm64.sh standalone
+
+      - name: Cache Nuitka (onefile)
+        uses: actions/cache@v4
+        with:
+          path: nuitka-cache-onefile
+          key: "nuitka-linux_arm64-onefile-${{ hashFiles('requirements.txt', 'src/**/*.py') }}"
+          restore-keys: |
+            "nuitka-linux_arm64-onefile-"
+
+      - name: Build onefile
+        env:
+          NUITKA_CACHE_DIR: "nuitka-cache-onefile"
+        run: bash build/linux-arm64.sh onefile
+
+      - name: Upload standalone package
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-linux-arm64
+          path: dist/standalone/PyAsciiFilm-*.tar.gz
+          if-no-files-found: error
+          compression-level: 9
+
+      - name: Upload onefile binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyasciifilm-linux-arm64-onefile
+          path: dist/onefile/PyAsciiFilm-*-linux_arm64
           if-no-files-found: error
           compression-level: 9
