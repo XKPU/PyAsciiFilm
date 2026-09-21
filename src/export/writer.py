@@ -66,8 +66,13 @@ class _FFmpegWriter:
         try:
             rc = self._proc.wait(timeout=30)
         except Exception:
+            # 超时必须确认进程真的死了，否则句柄不释放、输出文件删不掉
             try:
                 self._proc.kill()
+            except Exception:
+                pass
+            try:
+                self._proc.wait(timeout=10)
             except Exception:
                 pass
         try:

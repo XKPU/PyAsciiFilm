@@ -124,9 +124,15 @@ class ExportProgressScreen(Screen):
                 cancel=self._cancel.is_set,
             )
         except Exception as e:
-            self.app.call_from_thread(
-                lambda _e=e: done(False, f"导出异常: {_e}")
-            )
+            # 取消后本屏可能已卸载，此时不能再往 UI 线程投递，否则抛 NoActiveAppError 打断收尾流程
+            if self._dismissed:
+                return
+            try:
+                self.app.call_from_thread(
+                    lambda _e=e: done(False, f"导出异常: {_e}")
+                )
+            except Exception:
+                pass
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "back":

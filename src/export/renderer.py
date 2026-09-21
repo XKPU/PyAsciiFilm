@@ -116,11 +116,11 @@ def _render_frame(char_grid, color_grid, atlas, tile_w, tile_h, char_to_idx, use
 
     luma_bin = np.where(luma >= 128, 255, 0).astype(np.uint8)
     if use_color and color_grid is not None:
+        # 仅字符笔画着色，背景保持黑色，与播放端 38;2 前景色语义一致
         color_tiled = np.array(Image.fromarray(color_grid).resize((W, H), Image.NEAREST))
-        fg = luma_bin.astype(np.float32) / 255.0
-        bg = color_tiled.astype(np.float32)
-        rgb = (bg * (1.0 - fg[..., None] * 0.65) + 0.5).astype(np.uint8)
-        cur = rgb[:, :, ::-1].copy()
+        mask = (luma_bin > 0)[..., None]
+        fg = np.where(mask, color_tiled, 0).astype(np.uint8)
+        cur = fg[:, :, ::-1].copy()
     else:
         out = np.empty((H, W, 3), dtype=np.uint8)
         out[..., 0] = luma_bin

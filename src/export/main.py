@@ -132,13 +132,16 @@ def export_video(video_path, output_path, target_w, target_h, target_fps,
             log(f"释放编码器失败: {e}")
     if ok:
         _mux_audio(output_path, video_path, fmt, log)
-    elif msg.startswith("已取消"):
-        # 取消时删除半成品文件
-        if os.path.isfile(output_path):
+    elif cancel and cancel():
+        # 取消必须删除半成品：无论 release 是否抛错都要删，否则文件被遗留在输出目录
+        msg = "已取消导出"
+        for _ in range(20):
             try:
-                os.remove(output_path)
+                if os.path.isfile(output_path):
+                    os.remove(output_path)
+                break
             except Exception:
-                pass
+                time.sleep(0.1)
     return _finish_export(ok, msg, on_done, elapsed=time.time() - t0)
 
 
