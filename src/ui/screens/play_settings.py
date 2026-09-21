@@ -1,3 +1,4 @@
+import math
 import os
 
 from textual.app import ComposeResult
@@ -13,7 +14,10 @@ from ._helpers import _probe_video_metadata, _warn_detect_pending
 from ._screen_config import PLAY_ID_TO_ZONE, PLAY_ZONE_HINTS, _PLAY_INLINE
 
 
-_PLAY_TAB_ORDER = ["reselect", "fps", "usage", "decode_mode", "color", "ok", "cancel"]
+_PLAY_TAB_ORDER = ["reselect", "fps", "interp", "usage", "decode_mode", "color", "ok", "cancel"]
+
+# 帧率输入：仅允许正数，最多一个小数点，不接受符号与科学计数法
+_FPS_RESTRICT = r"\d*\.?\d*"
 
 
 class PlaySettingsScreen(Screen):
@@ -112,6 +116,19 @@ class PlaySettingsScreen(Screen):
         except Exception:
             pass
 
+    def on_input_blurred(self, event: Input.Blurred) -> None:
+        # 离开帧率输入框时把超上限的值收敛到展示值，避免与实际播放不一致
+        if getattr(event.input, "id", "") != "fps":
+            return
+        if self._interp_on():
+            return
+        try:
+            fps = float(event.value)
+        except ValueError:
+            return
+        if self.src_fps > 0 and fps > self.src_fps + 1e-6:
+            event.input.value = self._fps_display_default()
+
     def on_focus(self, event) -> None:
         widget = event.widget
         if widget is None:
@@ -164,6 +181,7 @@ class PlaySettingsScreen(Screen):
         # Ctrl+ 快捷键
         _MAP = {
             "ctrl+f": "fps",
+            "ctrl+n": "interp",
             "ctrl+u": "usage",
             "ctrl+d": "decode_mode",
             "ctrl+t": "color",
@@ -189,7 +207,7 @@ class PlaySettingsScreen(Screen):
             self.query_one("#err", Static).update("请先选择视频文件")
             return
         try:
-            fps = float(self.query_one("#fps", Input).value)
+            fps = self._resolve_fps()
         except ValueError:
             self.query_one("#err", Static).update("帧率必须为数字")
             return
@@ -207,7 +225,8 @@ class PlaySettingsScreen(Screen):
         except ValueError:
             usage = 35
         usage = max(1, min(100, usage))
-        self.app.exit(result=("play", color, self.video_path, fps, decode_args, usage))
+        interp = "blend" if self._interp_on() else None
+        self.app.exit(result=("play", color, self.video_path, fps, decode_args, usage, interp))
 
     def action_back_to_menu(self):
         self.app.pop_screen()
@@ -221,6 +240,25 @@ class PlaySettingsScreen(Screen):
             self._set_video(path)
         self.app.pop_screen()
 
+    def _interp_on(self) -> bool:
+        try:
+            return bool(self.query_one("#interp", Checkbox).value)
+        except Exception:
+            return False
+
+    def _fps_display_default(self) -> str:
+        # 展示用向上取整，实际播放仍按原视频帧率
+        if self.src_fps <= 0:
+            return ""
+        return str(int(math.ceil(self.src_fps - 1e-6)))
+
+    def _resolve_fps(self) -> float:
+        # 超过原视频帧率时按原帧率处理，其余按输入使用；开启插帧则不受此上限
+        fps = float(self.query_one("#fps", Input).value)
+        if not self._interp_on() and self.src_fps > 0 and fps > self.src_fps + 1e-6:
+            return self.src_fps
+        return fps
+
     def _set_video(self, video_path):
         self.video_path = video_path
         _info = _probe_video_metadata(video_path) or {}
@@ -231,7 +269,7 @@ class PlaySettingsScreen(Screen):
             self.query_one("#srcinfo", Static).update(
                 f"视频: {os.path.basename(video_path)}  "
                 f"{self.src_w}x{self.src_h}  帧率: {self.src_fps:.2f} fps")
-            self.query_one("#fps", Input).value = str(int(round(self.src_fps)))
+            self.query_one("#fps", Input).value = self._fps_display_default()
         except Exception:
             pass
 
@@ -275,9 +313,14 @@ class PlaySettingsScreen(Screen):
                 ),
                 Horizontal(
                     Label("帧率:"), self._shortcut("fps"),
-                    Input(value="", id="fps"),
+                    Input(value="", id="fps", restrict=_FPS_RESTRICT),
                 ),
-                Static("目标帧率，不为实际播放帧率，实际帧率受CPU性能限制", id="hint"),
+                Static("目标帧率，不为实际播放帧率，实际帧率受CPU性能限制；关闭插帧时超过原视频帧率按原帧率播放", id="hint"),
+                Horizontal(
+                    Checkbox("插帧（blend 混合插值）", id="interp"),
+                    self._shortcut("interp"),
+                ),
+                Static("开启后可用混合插值补帧，可突破原视频帧率；运动画面可能有轻微拖影", id="interp_hint"),
                 Horizontal(
                     Label("ffmpeg最高占用(%):"), self._shortcut("usage"),
                     Input(value="35", id="usage"),

@@ -39,7 +39,7 @@ def _make_log(on_log):
 def export_video(video_path, output_path, target_w, target_h, target_fps,
                  use_color=False, fmt="mp4", on_progress=None, on_done=None,
                  on_log=None, hwaccel=True, ffmpeg_usage=None, cancel=None,
-                 encoder=None):
+                 encoder=None, interp=None):
     # 单遍导出：边解码边按目标帧率抽样、逐帧渲染编码
     global ASCII_CHARS, _GRAY_LOOKUP
     ASCII_CHARS = reload_charset()
@@ -70,9 +70,13 @@ def export_video(video_path, output_path, target_w, target_h, target_fps,
 
     target_w = max(1, min(int(target_w), src_w))
     target_h = max(1, min(int(target_h), src_h))
-    target_fps = max(1.0, min(float(target_fps), src_fps))
-    interval = max(1.0, src_fps / max(0.1, target_fps))
-    est_total = max(1, int(round(src_count / interval))) if src_count > 0 else None
+    # 开启插帧时允许目标帧率超过源帧率，交由 ffmpeg 补帧
+    target_fps = max(1.0, float(target_fps))
+    if not interp:
+        target_fps = min(target_fps, src_fps)
+    # 插帧时 ffmpeg 已直接产出目标帧率的帧，故不再二次抽帧
+    interval = 1.0 if interp else max(1.0, src_fps / max(0.1, target_fps))
+    est_total = max(1, int(round(src_count * (target_fps / src_fps)))) if src_count > 0 else None
 
     font, cell_w, cell_h, y_offset = _load_mono_font(ASCII_CHARS)
     atlas, tile_w, tile_h, char_to_idx = _build_glyph_atlas(font, cell_w, cell_h, ASCII_CHARS, y_offset)
@@ -116,7 +120,8 @@ def export_video(video_path, output_path, target_w, target_h, target_fps,
             canvas_w, canvas_h, interval, est_total, on_progress, log,
             metadata=metadata, hwaccel=hwaccel, decode_args=decode_args,
             atlas=atlas, tile_w=tile_w, tile_h=tile_h,
-            char_to_idx=char_to_idx, ffmpeg_usage=ffmpeg_usage, cancel=cancel)
+            char_to_idx=char_to_idx, ffmpeg_usage=ffmpeg_usage, cancel=cancel,
+            interp=interp)
     finally:
         # release 失败说明编码未收尾，不能当作成功
         try:
@@ -247,7 +252,7 @@ def _export_single(video_path, writer, output_path, target_w, target_h, target_f
                    on_progress, log, metadata=None, hwaccel=True,
                    decode_args=None,
                    atlas=None, tile_w=None, tile_h=None, char_to_idx=None,
-                   ffmpeg_usage=None, cancel=None):
+                   ffmpeg_usage=None, cancel=None, interp=None):
     # 单线程单遍导出；cancel 返回 True 时中断
     out_count = 0
     write_err = False
@@ -256,7 +261,8 @@ def _export_single(video_path, writer, output_path, target_w, target_h, target_f
 
     cap = FrameReader(video_path, log=log, force_ffmpeg=True, force_size=(target_w, target_h),
                       metadata=metadata, hwaccel=hwaccel, decode_args=decode_args,
-                      ffmpeg_usage=ffmpeg_usage)
+                      ffmpeg_usage=ffmpeg_usage,
+                      play_fps=target_fps if interp else 0.0, interp=interp)
     if on_progress:
         on_progress("render", 0, est_total or 0)
     try:

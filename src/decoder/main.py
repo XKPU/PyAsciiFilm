@@ -58,12 +58,16 @@ def _re_flag():
     return flag
 
 
-def _build_vf(scale_w, scale_h, play_fps=0.0):
+def _build_vf(scale_w, scale_h, play_fps=0.0, interp=None):
     # 组装 -vf 滤镜链；play_fps>0 时按目标帧率抽帧，使产出与消费速率一致
+    # interp=blend 用混合插值补帧，mci 用运动补偿插值；二者都须在缩放前执行
     parts = []
+    if interp and play_fps > 0:
+        mode = "mci" if interp == "mci" else "blend"
+        parts.append(f"minterpolate=fps={play_fps:.6f}:mi_mode={mode}")
     if scale_w > 0 and scale_h > 0:
         parts.append(f"scale={scale_w}:{scale_h}:flags=neighbor")
-    if play_fps and play_fps > 0:
+    if play_fps and play_fps > 0 and not interp:
         parts.append(f"fps={play_fps:.6f}")
     return ",".join(parts)
 
@@ -73,7 +77,7 @@ class FrameReader:
 
     def __init__(self, video_path, log=None, force_ffmpeg=False, force_size=None,
                  metadata=None, hwaccel=True, decode_args=None, ffmpeg_usage=None,
-                 play_fps=None):
+                 play_fps=None, interp=None):
         self.path = video_path
         self._log = log or _log
         self._ffmpeg_usage = ffmpeg_usage
@@ -82,6 +86,7 @@ class FrameReader:
         self._hwaccel = hwaccel
         self._decode_args = tuple(decode_args) if decode_args else None
         self._play_fps = float(play_fps) if play_fps and play_fps > 0 else 0.0
+        self._interp = interp if interp in ("blend", "mci") else None
         self._proc = None
         self._frame_bytes = 0
         self._pipe_w = self._pipe_h = 0
@@ -162,7 +167,7 @@ class FrameReader:
             if self._play_fps > 0 and not self._force:
                 cmd += _re_flag()
             cmd += ["-i", self.path] + _fps_flag()
-            vf = _build_vf(self._scale_w, self._scale_h, self._play_fps)
+            vf = _build_vf(self._scale_w, self._scale_h, self._play_fps, self._interp)
             if vf:
                 cmd += ["-vf", vf]
             cmd += ["-f", "rawvideo", "-pix_fmt", "rgb24", "-"]

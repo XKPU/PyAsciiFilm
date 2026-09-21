@@ -21,7 +21,7 @@ from utils.helpers import _list_encoder_options
 
 
 _EXPORT_TAB_ORDER = [
-    "reselect", "char_w", "char_h", "lock", "fps", "fmt",
+    "reselect", "char_w", "char_h", "lock", "fps", "interp", "fmt",
     "usage", "decode_mode", "out_path", "browse_dir", "color",
     "ok", "cancel",
 ]
@@ -41,6 +41,12 @@ class ExportSettingsScreen(Screen):
         ("MKV (.mkv)", "mkv"),
         ("MOV (.mov)", "mov"),
         ("WebM (.webm)", "webm"),
+    ]
+
+    INTERP_OPTIONS = [
+        ("关闭", "off"),
+        ("blend 混合插值（快）", "blend"),
+        ("mci 运动补偿插值（慢，画质好）", "mci"),
     ]
 
     _MAX_REC_CHAR_W = 200
@@ -177,12 +183,24 @@ class ExportSettingsScreen(Screen):
                     break
         self.query_one("#warn", Static).update(warn)
 
+    def _interp_value(self):
+        # 返回 None / "blend" / "mci"，供解码端组装滤镜
+        try:
+            v = self.query_one("#interp", PlainSelect).value
+        except Exception:
+            return None
+        return v if v in ("blend", "mci") else None
+
+    def _interp_on(self):
+        return self._interp_value() is not None
+
     def _step_fps(self, delta):
         try:
             fps = float(self.query_one("#fps", Input).value)
         except ValueError:
             fps = int(self.src_fps)
-        fps = max(1.0, min(fps + delta, self.src_fps))
+        upper = max(self.src_fps, 240.0) if self._interp_on() else self.src_fps
+        fps = max(1.0, min(fps + delta, upper))
         self.query_one("#fps", Input).value = str(int(round(fps)))
 
     def _select_output_dir(self):
@@ -298,9 +316,9 @@ class ExportSettingsScreen(Screen):
             self.query_one("#err", Static).update(
                 f"画布超出上限: {rcw}x{rch}px（上限 {_MAX_W}x{_MAX_H}px）")
             return
-        if fps > self.src_fps + 1e-6:
+        if fps > self.src_fps + 1e-6 and not self._interp_on():
             self.query_one("#err", Static).update(
-                f"目标帧率不能超过原视频 {self.src_fps:.2f} fps")
+                f"目标帧率不能超过原视频 {self.src_fps:.2f} fps（开启插帧可突破）")
             return
 
         out_path = self._get_full_output_path()
@@ -354,6 +372,7 @@ class ExportSettingsScreen(Screen):
             "w": cw, "h": ch, "fps": fps, "out": out_path,
             "color": color, "fmt": self.fmt, "hwaccel": hwaccel,
             "ffmpeg_usage": usage, "encoder": encoder,
+            "interp": self._interp_value(),
         }))
 
     def _shortcut(self, widget_id: str) -> Static:
@@ -383,6 +402,12 @@ class ExportSettingsScreen(Screen):
                     Button("v", id="fps_down"),
                 ),
                 Static("目标帧率，若CPU性能不足将会导致导出缓慢", classes="hint"),
+                Horizontal(
+                    Label("插帧:"), self._shortcut("interp"),
+                    PlainSelect(self.INTERP_OPTIONS, value="off",
+                                allow_blank=False, id="interp"),
+                ),
+                Static("关闭=按fps抽帧；blend=混合插值，快；mci=运动补偿插值，画质最好但很慢", classes="hint"),
                 Horizontal(Label("导出格式:"), self._shortcut("fmt"), PlainSelect(self.FMT_OPTIONS, value="mp4",
                                                       allow_blank=False, id="fmt")),
                 Horizontal(Label("ffmpeg最高占用(%):"), self._shortcut("usage"), Input(value="35", id="usage")),
@@ -513,6 +538,7 @@ class ExportSettingsScreen(Screen):
             "ctrl+k": "char_h",
             "ctrl+l": "lock",
             "ctrl+f": "fps",
+            "ctrl+n": "interp",
             "ctrl+g": "fmt",
             "ctrl+u": "usage",
             "ctrl+d": "decode_mode",

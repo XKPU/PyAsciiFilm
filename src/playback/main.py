@@ -192,7 +192,7 @@ def _leave_screen(out):
 
 
 def play_video(video_path, use_color=False, with_audio=True,
-               target_fps=None, decode_args=None, ffmpeg_usage=None):
+               target_fps=None, decode_args=None, ffmpeg_usage=None, interp=None):
     global _OWNS_SCREEN
     _enable_windows_ansi()
     out = sys.stdout
@@ -226,10 +226,14 @@ def play_video(video_path, use_color=False, with_audio=True,
     fps = clean_fps(meta.get("fps")) or 30.0
     src_fps = fps
     if target_fps and target_fps > 0:
-        fps = min(fps, target_fps)
+        # 开启插帧时允许突破原视频帧率，未开启时仍以源帧率为上限
+        fps = target_fps if interp else min(fps, target_fps)
     frame_interval = 1.0 / max(fps, 1.0)
-    # 只有真正降帧时才让解码端按目标帧率抽帧；play_fps 为 0 表示不干预
-    play_fps = fps if fps < src_fps - 1e-6 else 0.0
+    # 插帧必须让解码端按目标帧率生成；未插帧时仅降帧才干预（play_fps 为 0 表示不干预）
+    if interp:
+        play_fps = fps
+    else:
+        play_fps = fps if fps < src_fps - 1e-6 else 0.0
     total_frames = int(meta.get("frame_count") or 0)
     total_duration = meta.get("duration") or 0.0
     if total_duration <= 0:
@@ -246,7 +250,7 @@ def play_video(video_path, use_color=False, with_audio=True,
         cap = FrameReader(video_path, log=_buf_log, force_size=(decode_w, decode_h),
                           metadata=(video_width, video_height, fps, total_frames),
                           decode_args=decode_args, ffmpeg_usage=ffmpeg_usage,
-                          play_fps=play_fps)
+                          play_fps=play_fps, interp=interp)
     except Exception as e:
         _log_error(f"无法打开视频文件（{e}）")
         _leave_screen(out)

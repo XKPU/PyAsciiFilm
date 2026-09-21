@@ -8,6 +8,7 @@ EXPORT_ID_TO_ZONE = {
     "fps": "fps",
     "fps_up": "fps",
     "fps_down": "fps",
+    "interp": "interp",
     "fmt": "fmt",
     "usage": "usage",
     "decode_mode": "decode",
@@ -24,6 +25,7 @@ _EXPORT_INLINE = {
     "char_h": "Ctrl+K",
     "lock": "Ctrl+L",
     "fps": "Ctrl+F",
+    "interp": "Ctrl+N",
     "fmt": "Ctrl+G",
     "usage": "Ctrl+U",
     "decode_mode": "Ctrl+D",
@@ -40,6 +42,7 @@ EXPORT_ZONE_HINTS = {
     "char_size": "Esc 返回 | Tab 切换",
     "lock": "Esc 返回 | Tab 切换",
     "fps": "Esc 返回 | Tab 切换",
+    "interp": "Esc 返回 | Tab 切换 | Enter 选取",
     "fmt": "Esc 返回 | Tab 切换 | Enter 选取",
     "usage": "Esc 返回 | Tab 切换",
     "decode": "Esc 返回 | Tab 切换 | Enter 选取",
@@ -52,6 +55,7 @@ EXPORT_ZONE_HINTS = {
 PLAY_ID_TO_ZONE = {
     "reselect": "src_area",
     "fps": "fps",
+    "interp": "interp",
     "usage": "usage",
     "decode_mode": "decode",
     "color": "color",
@@ -61,6 +65,7 @@ PLAY_ID_TO_ZONE = {
 
 _PLAY_INLINE = {
     "fps": "Ctrl+F",
+    "interp": "Ctrl+N",
     "usage": "Ctrl+U",
     "decode_mode": "Ctrl+D",
     "color": "Ctrl+T",
@@ -71,6 +76,7 @@ _PLAY_INLINE = {
 PLAY_ZONE_HINTS = {
     "src_area": "Esc 返回 | Tab 切换",
     "fps": "Esc 返回 | Tab 切换",
+    "interp": "Esc 返回 | Tab 切换 | Enter 切换",
     "usage": "Esc 返回 | Tab 切换",
     "decode": "Esc 返回 | Tab 切换 | Enter 选取",
     "color": "Esc 返回 | Tab 切换",

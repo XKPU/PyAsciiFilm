@@ -120,6 +120,7 @@ class ExportProgressScreen(Screen):
                 hwaccel=self.params.get("hwaccel", True),
                 ffmpeg_usage=self.params.get("ffmpeg_usage", 35),
                 encoder=self.params.get("encoder"),
+                interp=self.params.get("interp"),
                 cancel=self._cancel.is_set,
             )
         except Exception as e:

@@ -17,20 +17,6 @@ __pycache__/
 *.swp
 *.swo
 
-# OS
-.DS_Store
-Thumbs.db
-
-
-# Environment
-.env
-
-# Update
-.md
-
-# backup
-.wfbackup/
-
 # tast
 /_*
 test/

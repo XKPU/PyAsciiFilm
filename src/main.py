@@ -46,17 +46,18 @@ def _asyncio_excepthook(loop, context):
 
 
 def do_play(video_path, use_color, with_audio=True,
-            target_fps=None, decode_args=None, ffmpeg_usage=None):
+            target_fps=None, decode_args=None, ffmpeg_usage=None, interp=None):
     from core.main import reload_charset
     reload_charset()
     from playback.main import play_video, set_alt_screen
     set_alt_screen(True)
     _log(f"开始播放: {video_path} | 彩色={use_color} 音频={with_audio}"
-         f" | 目标帧率={target_fps} | 解码={decode_args} | CPU占用={ffmpeg_usage}")
+         f" | 目标帧率={target_fps} | 解码={decode_args} | CPU占用={ffmpeg_usage}"
+         f" | 插帧={interp}")
     try:
         play_video(video_path, use_color=use_color, with_audio=with_audio,
                    target_fps=target_fps, decode_args=decode_args,
-                   ffmpeg_usage=ffmpeg_usage)
+                   ffmpeg_usage=ffmpeg_usage, interp=interp)
     except Exception as e:
         _log_error(f"播放异常: {e}")
         print(f"\n[错误] 播放过程中发生异常: {e}")
@@ -143,13 +144,14 @@ def _run_loop(MenuApp):
             target_fps = result[3] if len(result) > 3 else None
             decode_args = result[4] if len(result) > 4 else None
             ffmpeg_usage = result[5] if len(result) > 5 else None
+            interp = result[6] if len(result) > 6 else None
             if not video_path:
                 _log("未选择视频，返回菜单")
                 continue
             _log(f"已选择视频: {video_path}")
             do_play(video_path, use_color=use_color, with_audio=True,
                     target_fps=target_fps, decode_args=decode_args,
-                    ffmpeg_usage=ffmpeg_usage)
+                    ffmpeg_usage=ffmpeg_usage, interp=interp)
             continue
 
         return

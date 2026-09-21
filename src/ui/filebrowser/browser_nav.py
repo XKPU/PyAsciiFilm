@@ -14,6 +14,8 @@ class BrowserNav:
 
     async def _browser_on_key(self, event: Key, zone_info: dict):  # noqa: C901
         key = event.key
+        # 焦点可能未经由 on_focus 更新，按当前聚焦控件校正区域
+        zone_info = self._sync_zone_from_focus() or zone_info
         zone = zone_info
         if key == "ctrl+a":
             event.stop()
@@ -55,7 +57,9 @@ class BrowserNav:
                 self._active_zone = "path_buttons"
                 self._update_keybar()
                 return
-            return
+            # Enter 交由下方统一处理；其余按键留给输入框自身
+            if key != "enter":
+                return
 
         if zone == "path_buttons":
             if key in ("left", "h"):
@@ -174,6 +178,9 @@ class BrowserNav:
             return
 
         if key == "enter":
+            # 输入框内按 Enter 时不能再漏给列表，否则会二次导航
+            if zone in ("path_input", "filename_input"):
+                event.stop()
             await self._browser_on_enter(event, zone)
             return
 
@@ -185,6 +192,26 @@ class BrowserNav:
             self._active_zone = target_zone
             self._update_keybar()
             return
+
+    def _sync_zone_from_focus(self):
+        # on_focus 实测不触发，统一改为按当前聚焦控件校正区域
+        try:
+            wid = getattr(self.app.focused, "id", "") or ""
+        except Exception:
+            return None
+        zone = self._ID_TO_ZONE.get(wid)
+        if zone:
+            self._active_zone = zone
+        return zone
+
+    def on_descendant_focus(self, event) -> None:
+        # 焦点切换的可靠时机，在此同步区域与提示栏
+        widget = getattr(event, "widget", None)
+        fid = getattr(widget, "id", "") or ""
+        zone = self._ID_TO_ZONE.get(fid)
+        if zone:
+            self._active_zone = zone
+            self._update_keybar()
 
     def _browser_on_focus(self, event):
         widget = event.widget
@@ -207,6 +234,7 @@ class BrowserNav:
             self._update_keybar()
 
     def _update_keybar(self):
+        self._sync_zone_from_focus()
         hints = self._ZONE_HINTS.get(self._active_zone, "")
         try:
             self.query_one(KeyBar).set_hint(hints)
