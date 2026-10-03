@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: 2025 K_PU
+# SPDX-License-Identifier: AGPL-3.0-or-later
 from textual.app import ComposeResult
 from textual.screen import Screen
 from textual.widgets import Button, Static

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2025 K_PU
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # 浏览器通用键盘导航
 import asyncio
 

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2025 K_PU
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # 导出渲染（字体、字形图集、帧渲染）
 import math
 import os

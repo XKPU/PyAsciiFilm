@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2025 K_PU
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # 视频文件选择
 import os
 import sys

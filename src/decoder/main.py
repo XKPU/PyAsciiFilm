@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2025 K_PU
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
 # 统一视频解码器
 import re
 import subprocess
